@@ -1,12 +1,22 @@
+#!/bin/bash
+# Description: This script queries the file_event_log table in the sda database for a specific filepath.
+
+usage="""
+Usage: $0 <filepath>
+"""
+
 filepath=$1
 
 if [ "$filepath" == "" ];then
+    echo "$usage"
     exit 1
 fi
 
+file_path=$(echo "$filepath" | xargs)
+
 file_id=$(kubectl -n sda-prod exec svc/postgres-cluster-ro -c postgres -- psql -U postgres -t -d sda -c "
 SELECT file_id FROM sda.file_event_log 
-WHERE message->>'filepath' LIKE '%"$filepath"%'
+WHERE message->>'filepath' LIKE '%"$file_path"%'
 LIMIT 1
 ")
 
@@ -17,4 +27,3 @@ SELECT * FROM sda.file_event_log
 WHERE file_id = '$file_id'
 ORDER BY started_at DESC
 "
-
