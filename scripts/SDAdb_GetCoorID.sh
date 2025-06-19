@@ -9,7 +9,6 @@ filepath=$(echo "$1" | xargs)
 user=$(echo "$2" | xargs)
 accession_id=$(echo "$3" | xargs)
 kubectl -n sda-prod exec svc/postgres-cluster-ro -c postgres -- psql -U postgres -t -d sda -c "
--- Query to retrieve the correlation ID based on filepath, user, and accession ID   
 SELECT DISTINCT correlation_id FROM sda.file_event_log e 
 RIGHT JOIN sda.files f ON e.file_id = f.id
 WHERE f.submission_file_path = '$filepath' AND f.submission_user = '$user' AND COALESCE(f.stable_id, '') = '$accession_id'
