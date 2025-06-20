@@ -8,7 +8,7 @@ if [ "$file_id" == "" ];then
 fi
 
 kubectl -n sda-prod exec svc/postgres-cluster-ro -c postgres -- psql -U postgres  -d sda -c "
-SELECT stable_id, submission_user, submission_file_path,  archive_file_path FROM sda.files
+SELECT * FROM sda.files
 WHERE id = '$file_id'
 "
 
