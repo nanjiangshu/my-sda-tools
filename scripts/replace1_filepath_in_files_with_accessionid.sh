@@ -11,6 +11,6 @@ fi
 
 kubectl -n sda-prod exec svc/postgres-cluster-rw -c postgres -- psql -U postgres -d sda -c "
 UPDATE sda.files
-SET submission_file_path = TRIM(submission_file_path, E' \t\n')
+SET submission_file_path = REGEXP_REPLACE(submission_file_path, '\s+$', '')
 WHERE stable_id = '$accession_id'
 "
