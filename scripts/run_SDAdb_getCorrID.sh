@@ -11,7 +11,7 @@ if [ -z "$infile" ]; then
 fi
 
 while IFS=$'\t' read -r accession_id filepath user; do
-    corr_id=$(bash $binpath/SDAdb_GetCorrID.sh $filepath $user $accession_id | awk 'sub(/[ \t\r]+$/, "")')
+    corr_id=$(bash $binpath/SDAdb_GetCorrID.sh $filepath $user $accession_id | xargs -n1 )
     if [ -z "$corr_id" ]; then
         echo "No correlation ID found for $accession_id $filepath"
     else
