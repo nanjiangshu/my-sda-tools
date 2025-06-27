@@ -2,7 +2,7 @@
 
 infile=$1
 SCRIPT_DIR=$(dirname "$0")
-binpath=$(realpath "$SCRIPT_DIR/..")
+binpath=$(realpath "$SCRIPT_DIR")
 
 # Check if input file argument is provided
 if [ -z "$infile" ]; then
