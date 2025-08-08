@@ -14,6 +14,12 @@ Options:
   -binpath <path>   Path to the scripts directory (default: $binpath)
   -c4ghkey <path>   Path to the c4gh private key file (default: $keyfile)
 """
+
+if [ "$#" -eq 0 ]; then
+    echo "$usage"
+    exit 1
+fi
+
 while [[ $# -gt 0 ]]; do
     case $1 in
         -h|--help)
@@ -53,11 +59,6 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
-
-if [ "$fileid" == "" ];then
-    echo "Usage: $0 <fileid>"
-    exit 1
-fi
 
 if [ ! -f $s3cmdconf ];then
     echo "S3CMD config file not found: $s3cmdconf"
