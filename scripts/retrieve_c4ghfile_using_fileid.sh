@@ -2,7 +2,6 @@
 set -euo pipefail
 
 # This script retrieves c4gh file by concatenation of the header (from sda.files) and the archived file from the archive and then decrypt it 
-fileid=$1
 s3cmdconf=/data/project-sda/misc/bp-submission/s3cmd-bp-master-archive.conf
 binpath=/data/project-sda/my-sda-tools/scripts/
 keyfile=c4gh.sec.pem
