@@ -26,13 +26,13 @@ RunOldQuery() {
     LEFT JOIN (
         SELECT DISTINCT ON (file_id) file_id, started_at, event FROM sda.file_event_log ORDER BY file_id, started_at DESC
     ) e ON f.id = e.file_id 
-    WHERE f.submission_user = '$user'
+    WHERE f.submission_user = '$user_id'
     AND f.id NOT IN (
         SELECT f.id
         FROM sda.files f
         RIGHT JOIN sda.file_dataset d ON f.id = d.file_id
     );
-    " | sort -u  | { [ -z "$dataset_folder" ] || grep "$dataset_folder" ; }
+    " | sort -u  | grep "${dataset_folder:-.*}" 
 }
 
 RunNewQuery() {
@@ -55,7 +55,7 @@ RunNewQuery() {
     LEFT JOIN sda.file_dataset d ON f.id = d.file_id   
     WHERE f.submission_user = '$user_id'
     AND d.file_id IS NULL;
-    " | sort -u | { [ -z "$dataset_folder" ] || grep "$dataset_folder" ; } 
+    " | sort -u | grep "${dataset_folder:-.*}" 
 }
 
 RunNewQuery "$user_id" "${dataset_folder}"
