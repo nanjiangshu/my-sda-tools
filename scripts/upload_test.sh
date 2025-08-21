@@ -5,6 +5,7 @@ set -euo pipefail
 RUNDIR=$(dirname "$(realpath "$0")")
 [[ -d "$RUNDIR" ]] || die "Script directory not found: $RUNDIR"
 [[ -f "$RUNDIR/analyze_upload_test.py" ]] || die "Required script not found: $RUNDIR/analyze_upload_test.py"
+
 WORKDIR=""
 S3CMDFILE="./s3cmd.conf"
 BINPATH=""
@@ -23,48 +24,57 @@ show_help() {
 Usage: $0 [options] <subcommand>
 
 Options:
-  -workdir DIR      Required. Working directory where datasets/results/keys are stored
-  -config FILE      Path to s3cmd config file (default: ./s3cmd.conf)
-  -binpath DIR      Path to directory containing sda-cli (default: found in \$PATH)
-  -outdir DIR       Directory to copy results into (default: current folder)
-  -size {2|20|200}  Limit operations to one dataset size (default: all sizes)
-  -numfile NUM      Number of files per dataset (default: $NUMFILE)
-  -no-cleanup       Do not clean up workdir after run (useful for debugging)
+  -workdir DIR       Required. Working directory where datasets/results/keys are stored
+  -config FILE       Path to s3cmd config file (default: ./s3cmd.conf)
+  -binpath DIR       Path to directory containing sda-cli (default: found in \$PATH)
+  -outdir DIR        Directory to copy results into (default: current folder)
+  -size SIZE         Limit operations to one dataset size (can be used multiple times)
+  -numfile NUM       Number of files per dataset (default: $NUMFILE)
+  -no-cleanup        Do not clean up workdir after run (useful for debugging)
+  -h, --help         Show this help message
 
 Subcommands:
-  run               Run all steps: create dataset, upload, collect report 
-  help              Show this help message
+  run                Run all steps: create dataset, upload, collect report
+  help               Show this help message
 
 Examples:
   $0 -workdir /tmp/sda-test run
-  $0 -workdir /tmp/sda-test -size 2 run
 EOF
 }
 
-# show help if no arguments provided
-[[ $# -eq 0 ]] && show_help && exit 0
-
-parse_flags() {
+# ========= Argument Parsing =========
+parse_args() {
+    SUBCOMMAND=""
     while [[ $# -gt 0 ]]; do
         case "$1" in
-            -config) shift; S3CMDFILE="$1" ;;
-            -binpath) shift; BINPATH="$1" ;;
-            -workdir) shift; WORKDIR="$1" ;;
-            -outdir) shift; OUTDIR="$1" ;;
-            -size) shift; RUN_SIZES=("$1") ;;   # e.g. -size 2 or 20 or 200
-            -numfile) shift; NUMFILE="$1" ;;
+            -config)    shift; S3CMDFILE="$1" ;;
+            -binpath)   shift; BINPATH="$1" ;;
+            -workdir)   shift; WORKDIR="$1" ;;
+            -outdir)    shift; OUTDIR="$1" ;;
+            -size)      shift; RUN_SIZES+=("$1") ;;
+            -numfile)   shift; NUMFILE="$1" ;;
             -no-cleanup) no_cleanup=true ;;
-            -h|--help) show_help; exit 0 ;;
-            help) show_help; exit 0 ;;
-            *) break ;;
+            -h|--help)  show_help; exit 0 ;;
+            run|help)
+                if [[ -n "$SUBCOMMAND" ]]; then
+                    die "Multiple subcommands given: $SUBCOMMAND and $1"
+                fi
+                SUBCOMMAND="$1"
+                ;;
+            *) die "Unknown argument: $1 (try '$0 help')" ;;
         esac
         shift
     done
-    SUBCOMMAND="${1:-}"
+
+    # default if no subcommand
+    if [[ -z "$SUBCOMMAND" ]]; then
+        show_help
+        exit 0
+    fi
 }
 
+# ========= Environment Setup =========
 setup_env() {
-    # Require workdir
     [[ -n "$WORKDIR" ]] || die "You must provide -workdir <dir>"
     mkdir -p "$WORKDIR"
     mkdir -p "$OUTDIR"
@@ -72,16 +82,13 @@ setup_env() {
     RESULT_DIR="$WORKDIR/results"
     KEYNAME="c4ghkey"
 
-    # s3cmd config
     [[ -f "$S3CMDFILE" ]] || die "s3cmd config file not found: $S3CMDFILE"
 
-    # sda-cli
     if [[ -n "$BINPATH" ]]; then
         SDA_CLI="$BINPATH/sda-cli"
     fi
     command -v "$SDA_CLI" >/dev/null 2>&1 || die "sda-cli not found at: $SDA_CLI"
 
-    # Sizes to run
     if [[ ${#RUN_SIZES[@]} -eq 0 ]]; then
         RUN_SIZES=("${SIZES[@]}")
     else
@@ -91,6 +98,7 @@ setup_env() {
     fi
 }
 
+# ========= Core Functions =========
 create_dataset() {
     mkdir -p "$DATA_DIR"
     for size in "${RUN_SIZES[@]}"; do
@@ -104,6 +112,7 @@ create_dataset() {
 
 upload() {
     mkdir -p "$RESULT_DIR"
+    RANDOM_SUFFIX=$((RANDOM % 1000000))
     for size in "${RUN_SIZES[@]}"; do
         dir="$DATA_DIR/${size}M"
         file="$dir/file_${size}M.bin"
@@ -116,7 +125,7 @@ upload() {
                 time -p "$SDA_CLI" -config "$S3CMDFILE" \
                     upload -encrypt-with-key "$WORKDIR/c4ghkey.pub.pem" \
                     --force-overwrite "$file" \
-                    -targetDir "testupload-sda-cli-${size}M"
+                    -targetDir "testupload-sda-cli-${size}M-$RANDOM_SUFFIX"
                 rm -f "$file.c4gh"
             } >> "$log" 2>&1 || echo "ERROR uploading $file (iteration $i)" >> "$log"
         done
@@ -128,16 +137,10 @@ collect_report() {
     for size in "${RUN_SIZES[@]}"; do
         log="$RESULT_DIR/sda_cli_${size}M.txt"
         echo "==== Collect result for dataset ${size}MB ===="
-        python $RUNDIR/analyze_upload_test.py "$log" || {
-            echo "Failed to analyze log $log"
-        }
+        python "$RUNDIR/analyze_upload_test.py" "$log" || echo "Failed to analyze log $log"
     done
-    python $RUNDIR/plot_upload_status.py "$RESULT_DIR" || {
-        echo "Failed to plot upload status"
-    }
-    python $RUNDIR/plot_upload_runtime.py "$RESULT_DIR" || {
-        echo "Failed to plot upload runtime"
-    }
+    python "$RUNDIR/plot_upload_status.py" "$RESULT_DIR" || echo "Failed to plot upload status"
+    python "$RUNDIR/plot_upload_runtime.py" "$RESULT_DIR" || echo "Failed to plot upload runtime"
     copy_results
 }
 
@@ -149,7 +152,6 @@ copy_results() {
 clean() {
     echo "Cleaning contents of workdir $WORKDIR ..."
     rm -rf "${WORKDIR:?}/"*
-
 }
 
 fetch_pubkey() {
@@ -165,7 +167,7 @@ run() {
     upload
     collect_report
     if [[ "$no_cleanup" == false ]]; then
-        echo "=== Cleaning after runall ==="
+        echo "=== Cleaning after run ==="
         clean
     else
         echo "Skipping cleanup as -no-cleanup was specified"
@@ -173,11 +175,10 @@ run() {
 }
 
 # ========= Main =========
-parse_flags "$@"
+parse_args "$@"
 setup_env
 
 case "$SUBCOMMAND" in
-    run) run ;;
-    help|"") show_help ;;
-    *) echo "Unknown subcommand: $SUBCOMMAND"; show_help; exit 1 ;;
+    run)  run ;;
+    help) show_help ;;
 esac
