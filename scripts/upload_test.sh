@@ -8,8 +8,9 @@ BINPATH=""
 SDA_CLI="sda-cli"
 OUTDIR="."
 SIZES=(2 20 200)    # MB per file
-FILES=100           # number of files per dataset
+NUMFILE=100         # number of files per dataset
 RUN_SIZES=()        # sizes to actually run (default = all)
+no_cleanup=false
 
 # ========= Helpers =========
 die() { echo "ERROR: $*" >&2; exit 1; }
@@ -24,20 +25,21 @@ Options:
   -binpath DIR        Path to directory containing sda-cli (default: found in \$PATH)
   -outdir DIR         Directory to copy results into (default: current folder)
   -size {2|20|200}    Limit operations to one dataset size (default: all sizes)
+  -numfile NUM        Number of files per dataset (default: $NUMFILE)
+  -no-cleanup         Do not clean up workdir after runall (useful for debugging)
 
 Subcommands:
+  runall              Full workflow: create-dataset, upload, collect-report, then clean
+  help                Show this help message
+
   create-dataset      Generate test datasets in workdir
   upload              Upload files using sda-cli
   collect-report      Summarize errors into summary_report.txt
-  create-key          Create encryption key pair (c4ghkey.pub.pem / c4ghkey.sec.pem)
   clean               Remove contents of workdir
-  runall              Full workflow: create-key, create-dataset, upload, collect-report, then clean
-  help                Show this help message
 
 Examples:
   $0 -workdir /tmp/sda-test runall
-  $0 -workdir /tmp/sda-test -size 20 upload
-  $0 -workdir /tmp/sda-test -size 2 create-dataset
+  $0 -workdir /tmp/sda-test -size 2 runall 
 EOF
 }
 
@@ -52,6 +54,9 @@ parse_flags() {
             -workdir) shift; WORKDIR="$1" ;;
             -outdir) shift; OUTDIR="$1" ;;
             -size) shift; RUN_SIZES=("$1") ;;   # e.g. -size 2 or 20 or 200
+            -numfile) shift; NUMFILE="$1" ;;
+            -no-cleanup) no_cleanup=true ;;
+            -h|--help) show_help; exit 0 ;;
             help) show_help; exit 0 ;;
             *) break ;;
         esac
@@ -93,8 +98,8 @@ create_dataset() {
     for size in "${RUN_SIZES[@]}"; do
         dir="$DATA_DIR/${size}M"
         mkdir -p "$dir"
-        echo "Creating dataset: $FILES files of ${size}MB in $dir"
-        for i in $(seq 1 $FILES); do
+        echo "Creating dataset: $NUMFILE files of ${size}MB in $dir"
+        for i in $(seq 1 $NUMFILE); do
             f="$dir/file_${i}.bin"
             [[ -f "$f" ]] || dd if=/dev/urandom of="$f" bs=1M count=$size status=none
         done
@@ -105,16 +110,18 @@ upload() {
     mkdir -p "$OUT_DIR"
     for size in "${RUN_SIZES[@]}"; do
         dir="$DATA_DIR/${size}M"
-        log="$OUT_DIR/time_cli_${size}M.txt"
+        log="$OUT_DIR/sda_cli_${size}M.txt"
         echo "Uploading dataset ${size}MB ... logging to $log"
         rm -f "$log"
-        for file in "$dir"/*; do
+        for i in $(seq 1 $NUMFILE); do
+            file="$dir/file_${i}.bin"
             {
+                echo "$i: Uploading $file"
                 time -p "$SDA_CLI" -config "$S3CMDFILE" \
                     upload -encrypt-with-key "$WORKDIR/c4ghkey.pub.pem" \
                     --force-overwrite "$file" \
                     -targetDir "testupload-sda-cli-${size}M"
-            } 2>> "$log" || echo "ERROR uploading $file" >> "$log"
+            } >> "$log" 2>&1 || echo "ERROR uploading $file" >> "$log"
         done
     done
 }
@@ -125,7 +132,7 @@ collect_report() {
     echo "Generating error summary in $report"
     rm -f "$report"
     for size in "${RUN_SIZES[@]}"; do
-        log="$OUT_DIR/time_cli_${size}M.txt"
+        log="$OUT_DIR/sda_cli_${size}M.txt"
         echo "==== Dataset ${size}MB ====" >> "$report"
         if [[ -f "$log" ]]; then
             grep "ERROR" "$log" >> "$report" || true
@@ -146,26 +153,30 @@ copy_results() {
 
 clean() {
     echo "Cleaning contents of workdir $WORKDIR ..."
-    rm -rf "$WORKDIR"/*
+    rm -rf "${WORKDIR:?}/"*
+
 }
 
-create_key() {
-    echo "Creating encryption key with sda-cli ..."
-    (cd "$WORKDIR" && "$SDA_CLI" createKey c4ghkey)
-    echo "Keys created in $WORKDIR:"
-    echo "  - c4ghkey.pub.pem (public)"
-    echo "  - c4ghkey.sec.pem (private)"
+fetch_pubkey() {
+    echo "Fetching public key with sda-cli ..."
+    (cd "$WORKDIR" && wget -q https://raw.githubusercontent.com/NBISweden/EGA-SE-user-docs/main/crypt4gh_bp_key.pub -O c4ghkey.pub.pem ||
+        die "Failed to fetch public key. Please check your internet connection or the URL.")
+    echo "Public key fetched to $WORKDIR/c4ghkey.pub.pem"
 }
 
 runall() {
     echo "=== Runall started ==="
-    create_key
+    fetch_pubkey
     create_dataset
     upload
     collect_report
-    echo "=== Cleaning after run ==="
-    clean
-    echo "=== Runall finished ==="
+    if [[ "$no_cleanup" == false ]]; then
+        echo "=== Cleaning after runall ==="
+        clean
+    else
+        echo "Skipping cleanup as -no-cleanup was specified"
+    fi
+    echo "=== Runall completed ==="
 }
 
 # ========= Main =========
@@ -177,7 +188,6 @@ case "$SUBCOMMAND" in
     upload) upload ;;
     collect-report) collect_report ;;
     clean) clean ;;
-    create-key) create_key ;;
     runall) runall ;;
     help|"") show_help ;;
     *) echo "Unknown subcommand: $SUBCOMMAND"; show_help; exit 1 ;;
