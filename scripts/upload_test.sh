@@ -2,6 +2,9 @@
 set -euo pipefail
 
 # ========= Default Configuration =========
+RUNDIR=$(dirname "$(realpath "$0")")
+[[ -d "$RUNDIR" ]] || die "Script directory not found: $RUNDIR"
+[[ -f "$RUNDIR/analyze_upload_test.py" ]] || die "Required script not found: $RUNDIR/analyze_upload_test.py"
 WORKDIR=""
 S3CMDFILE="./s3cmd.conf"
 BINPATH=""
@@ -20,26 +23,21 @@ show_help() {
 Usage: $0 [options] <subcommand>
 
 Options:
-  -workdir DIR        Required. Working directory where datasets/results/keys are stored
-  -config FILE        Path to s3cmd config file (default: ./s3cmd.conf)
-  -binpath DIR        Path to directory containing sda-cli (default: found in \$PATH)
-  -outdir DIR         Directory to copy results into (default: current folder)
-  -size {2|20|200}    Limit operations to one dataset size (default: all sizes)
-  -numfile NUM        Number of files per dataset (default: $NUMFILE)
-  -no-cleanup         Do not clean up workdir after runall (useful for debugging)
+  -workdir DIR      Required. Working directory where datasets/results/keys are stored
+  -config FILE      Path to s3cmd config file (default: ./s3cmd.conf)
+  -binpath DIR      Path to directory containing sda-cli (default: found in \$PATH)
+  -outdir DIR       Directory to copy results into (default: current folder)
+  -size {2|20|200}  Limit operations to one dataset size (default: all sizes)
+  -numfile NUM      Number of files per dataset (default: $NUMFILE)
+  -no-cleanup       Do not clean up workdir after run (useful for debugging)
 
 Subcommands:
-  runall              Full workflow: create-dataset, upload, collect-report, then clean
-  help                Show this help message
-
-  create-dataset      Generate test datasets in workdir
-  upload              Upload files using sda-cli
-  collect-report      Summarize errors into summary_report.txt
-  clean               Remove contents of workdir
+  run               Run all steps: create dataset, upload, collect report 
+  help              Show this help message
 
 Examples:
-  $0 -workdir /tmp/sda-test runall
-  $0 -workdir /tmp/sda-test -size 2 runall 
+  $0 -workdir /tmp/sda-test run
+  $0 -workdir /tmp/sda-test -size 2 run
 EOF
 }
 
@@ -71,7 +69,7 @@ setup_env() {
     mkdir -p "$WORKDIR"
     mkdir -p "$OUTDIR"
     DATA_DIR="$WORKDIR/datasets"
-    OUT_DIR="$WORKDIR/results"
+    RESULT_DIR="$WORKDIR/results"
     KEYNAME="c4ghkey"
 
     # s3cmd config
@@ -98,57 +96,54 @@ create_dataset() {
     for size in "${RUN_SIZES[@]}"; do
         dir="$DATA_DIR/${size}M"
         mkdir -p "$dir"
-        echo "Creating dataset: $NUMFILE files of ${size}MB in $dir"
-        for i in $(seq 1 $NUMFILE); do
-            f="$dir/file_${i}.bin"
-            [[ -f "$f" ]] || dd if=/dev/urandom of="$f" bs=1M count=$size status=none
-        done
+        f="$dir/file_${size}M.bin"
+        echo "Creating single dataset file: ${size}MB at $f"
+        [[ -f "$f" ]] || dd if=/dev/urandom of="$f" bs=1M count=$size status=none
     done
 }
 
 upload() {
-    mkdir -p "$OUT_DIR"
+    mkdir -p "$RESULT_DIR"
     for size in "${RUN_SIZES[@]}"; do
         dir="$DATA_DIR/${size}M"
-        log="$OUT_DIR/sda_cli_${size}M.txt"
+        file="$dir/file_${size}M.bin"
+        log="$RESULT_DIR/sda_cli_${size}M.txt"
         echo "Uploading dataset ${size}MB ... logging to $log"
         rm -f "$log"
         for i in $(seq 1 $NUMFILE); do
-            file="$dir/file_${i}.bin"
             {
-                echo "$i: Uploading $file"
+                echo "$i: Uploading $file (iteration $i)"
                 time -p "$SDA_CLI" -config "$S3CMDFILE" \
                     upload -encrypt-with-key "$WORKDIR/c4ghkey.pub.pem" \
                     --force-overwrite "$file" \
                     -targetDir "testupload-sda-cli-${size}M"
-            } >> "$log" 2>&1 || echo "ERROR uploading $file" >> "$log"
+                rm -f "$file.c4gh"
+            } >> "$log" 2>&1 || echo "ERROR uploading $file (iteration $i)" >> "$log"
         done
     done
 }
 
 collect_report() {
-    mkdir -p "$OUT_DIR"
-    report="$OUT_DIR/summary_report.txt"
-    echo "Generating error summary in $report"
-    rm -f "$report"
+    mkdir -p "$RESULT_DIR"
     for size in "${RUN_SIZES[@]}"; do
-        log="$OUT_DIR/sda_cli_${size}M.txt"
-        echo "==== Dataset ${size}MB ====" >> "$report"
-        if [[ -f "$log" ]]; then
-            grep "ERROR" "$log" >> "$report" || true
-            echo "Total errors: $(grep -c "ERROR" "$log" || true)" >> "$report"
-            echo "" >> "$report"
-        else
-            echo "No log found for ${size}MB dataset" >> "$report"
-        fi
+        log="$RESULT_DIR/sda_cli_${size}M.txt"
+        echo "==== Collect result for dataset ${size}MB ===="
+        python $RUNDIR/analyze_upload_test.py "$log" || {
+            echo "Failed to analyze log $log"
+        }
     done
-    echo "Summary written to $report"
+    python $RUNDIR/plot_upload_status.py "$RESULT_DIR" || {
+        echo "Failed to plot upload status"
+    }
+    python $RUNDIR/plot_upload_runtime.py "$RESULT_DIR" || {
+        echo "Failed to plot upload runtime"
+    }
     copy_results
 }
 
 copy_results() {
     echo "Copying results to $OUTDIR ..."
-    cp -r "$OUT_DIR"/* "$OUTDIR"/
+    cp -r "$RESULT_DIR"/* "$OUTDIR"/
 }
 
 clean() {
@@ -158,14 +153,13 @@ clean() {
 }
 
 fetch_pubkey() {
-    echo "Fetching public key with sda-cli ..."
+    echo "Fetching public key for uploading ..."
     (cd "$WORKDIR" && wget -q https://raw.githubusercontent.com/NBISweden/EGA-SE-user-docs/main/crypt4gh_bp_key.pub -O c4ghkey.pub.pem ||
         die "Failed to fetch public key. Please check your internet connection or the URL.")
     echo "Public key fetched to $WORKDIR/c4ghkey.pub.pem"
 }
 
-runall() {
-    echo "=== Runall started ==="
+run() {
     fetch_pubkey
     create_dataset
     upload
@@ -176,7 +170,6 @@ runall() {
     else
         echo "Skipping cleanup as -no-cleanup was specified"
     fi
-    echo "=== Runall completed ==="
 }
 
 # ========= Main =========
@@ -184,11 +177,7 @@ parse_flags "$@"
 setup_env
 
 case "$SUBCOMMAND" in
-    create-dataset) create_dataset ;;
-    upload) upload ;;
-    collect-report) collect_report ;;
-    clean) clean ;;
-    runall) runall ;;
+    run) run ;;
     help|"") show_help ;;
     *) echo "Unknown subcommand: $SUBCOMMAND"; show_help; exit 1 ;;
 esac

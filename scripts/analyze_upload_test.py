@@ -40,11 +40,11 @@ def process_block(block, runtimes, statuses):
     if "ERROR uploading" not in block_text:
         statuses.append("SUCCESS")
     elif "status code: 503" in block_text:
-        statuses.append("503-error")
+        statuses.append("503-ERROR")
     elif "status code: 413" in block_text:
-        statuses.append("413-error")
+        statuses.append("413-ERROR")
     elif "status code: 500" in block_text:
-        statuses.append("500-error")
+        statuses.append("500-ERROR")
     else:
         statuses.append("OTHER-ERROR")
 
