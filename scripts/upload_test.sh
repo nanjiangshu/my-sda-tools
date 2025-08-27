@@ -172,6 +172,7 @@ run() {
     else
         echo "Skipping cleanup as -no-cleanup was specified"
     fi
+    bash upload_result_to_github.sh "$OUTDIR"
 }
 
 # ========= Main =========

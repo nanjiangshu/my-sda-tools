@@ -1,6 +1,6 @@
 #!/bin/bash
 
-set -e
+set -euo pipefail
 
 encode_base64() {
   # Cross-platform base64 encoding without line breaks
@@ -12,7 +12,13 @@ encode_base64() {
   fi
 }
 
-TOKEN="$GITHUB_TOKEN"   # or paste your PAT
+# Check required environment
+if [[ -z "${GITHUB_TOKEN:-}" ]]; then
+  echo "Error: GITHUB_TOKEN is not defined."
+  exit 1
+fi
+
+TOKEN="$GITHUB_TOKEN"
 REPO="nanjiangshu/my-plots"
 BRANCH="main"
 
@@ -22,38 +28,55 @@ if [[ -z "$folder" ]]; then
   exit 1
 fi
 
-# --- Check token ---
-if [[ -z "$GITHUB_TOKEN" ]]; then
-  echo "Error: GITHUB_TOKEN is not set" >&2
-  exit 1
-fi
+# Allowed files
+allowed_files=(
+  "plot_runtime_boxplot.pdf"
+  "plot_runtime_boxplot.png"
+  "plot_upload_status.pdf"
+  "plot_upload_status.png"
+  "sda_cli_200M.runtime.txt"
+  "sda_cli_200M.txt"
+  "sda_cli_200M.upload_status.txt"
+  "sda_cli_20M.runtime.txt"
+  "sda_cli_20M.txt"
+  "sda_cli_20M.upload_status.txt"
+  "sda_cli_2M.runtime.txt"
+  "sda_cli_2M.txt"
+  "sda_cli_2M.upload_status.txt"
+)
 
-# Find newest file in the folder
-newest_file=$(ls -t "$folder"/* 2>/dev/null | head -n1)
+# Find newest file among allowed
+newest_file=$(ls -t "${folder}"/* 2>/dev/null | grep -F -f <(printf "%s\n" "${allowed_files[@]}") | head -n 1 || true)
 if [[ -z "$newest_file" ]]; then
-  echo "No files found in $folder"
+  echo "Error: No allowed files found in $folder"
   exit 1
 fi
 
-# Use its modification time for DATE_TIME
 DATE_TIME=$(date -r "$newest_file" +"%Y-%m-%d_%H-%M")
 
-echo "Uploading to folder: plots/$DATE_TIME/ (based on $newest_file)"
+echo "Using DATE_TIME=$DATE_TIME (from newest allowed file: $(basename "$newest_file"))"
 
-for file in "$folder"/*.*; do
-  filename=$(basename "$file")
-  path="plots/$DATE_TIME/$filename"
-  content=$(encode_base64 "$file")
+# Upload allowed files
+for filename in "${allowed_files[@]}"; do
+  file="$folder/$filename"
+  if [[ -f "$file" ]]; then
+    path="plots/$DATE_TIME/$filename"
+    content=$(encode_base64 "$file")
 
-  curl -s -X PUT \
-    -H "Authorization: token $TOKEN" \
-    -H "Content-Type: application/json" \
-    "https://api.github.com/repos/$REPO/contents/$path" \
-    -d @- <<EOF
+    echo "Uploading $filename → $path"
+
+    curl -s -X PUT \
+      -H "Authorization: token $TOKEN" \
+      -H "Content-Type: application/json" \
+      "https://api.github.com/repos/$REPO/contents/$path" \
+      -d @- <<EOF
 {
   "message": "Add plot $filename at $DATE_TIME",
   "content": "$content",
   "branch": "$BRANCH"
 }
 EOF
+  else
+    echo "Skipping missing file: $filename"
+  fi
 done
