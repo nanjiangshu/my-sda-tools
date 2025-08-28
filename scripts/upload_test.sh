@@ -96,6 +96,26 @@ setup_env() {
             [[ " ${SIZES[*]} " == *" $s "* ]] || die "Invalid size: $s. Must be one of: ${SIZES[*]}"
         done
     fi
+
+    if [[ -z "${GITHUB_TOKEN:-}" ]]; then
+        echo "Error: GITHUB_TOKEN is not defined."
+        exit 1
+    fi
+
+    if ! command -v python > /dev/null 2>&1; then
+        echo "Python is not installed. Please install Python and try again."
+        exit 1
+    fi
+
+    # Check if matplotlib is installed
+    if ! python -c "import pkg_resources; pkg_resources.get_distribution('matplotlib')" > /dev/null 2>&1; then
+        echo "matplotlib is not installed. Installing ..."
+        python -m pip install matplotlib
+        if [ $? -ne 0 ]; then
+            echo "Failed to install matplotlib. Please check your internet connection or permissions and try again."
+            exit 1
+        fi
+    fi
 }
 
 # ========= Core Functions =========

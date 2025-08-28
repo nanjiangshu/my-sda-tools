@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-import matplotlib.pyplot as plt
 import os
 import sys
 from collections import Counter
+
+import matplotlib.pyplot as plt
+
 
 def main(result_folder):
     # Input files (expected names)
@@ -14,7 +16,7 @@ def main(result_folder):
         "200M": os.path.join(result_folder, "sda_cli_200M.upload_status.txt"),
     }
 
-    categories = ["SUCCESS", "413-ERROR", "500-ERROR", "503-ERROR", "OTHER-ERROR"]
+    categories = ["SUCCESS", "401-ERROR", "413-ERROR", "500-ERROR", "503-ERROR", "OTHER-ERROR"]
     counts_by_size = {}
 
     for label, filepath in files.items():

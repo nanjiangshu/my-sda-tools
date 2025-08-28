@@ -30,6 +30,7 @@ def parse_upload_log(filepath):
 
 def process_block(block, runtimes, statuses):
     block_text = "\n".join(block)
+    block_text = block_text.lower()
 
     # Extract runtime
     match = re.search(r"real\s+([\d.]+)", block_text)
@@ -37,14 +38,16 @@ def process_block(block, runtimes, statuses):
         runtimes.append(match.group(1))  # keep as string
 
     # Classify outcome
-    if "ERROR uploading" not in block_text:
+    if "error" not in block_text:
         statuses.append("SUCCESS")
-    elif "status code: 503" in block_text:
-        statuses.append("503-ERROR")
+    elif "status code: 401" in block_text:
+        statuses.append("401-ERROR")
     elif "status code: 413" in block_text:
         statuses.append("413-ERROR")
     elif "status code: 500" in block_text:
         statuses.append("500-ERROR")
+    elif "status code: 503" in block_text:
+        statuses.append("503-ERROR")
     else:
         statuses.append("OTHER-ERROR")
 
