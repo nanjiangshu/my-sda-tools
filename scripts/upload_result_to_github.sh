@@ -27,6 +27,12 @@ if [ $# -lt 1 ]; then
   exit 1
 fi
 
+folder="$1"
+if [[ ! -d "$folder" ]]; then
+  echo "Error: $folder is not a directory."
+  exit 1
+fi
+
 # Allowed files
 allowed_files=(
   "plot_runtime_boxplot.pdf"
