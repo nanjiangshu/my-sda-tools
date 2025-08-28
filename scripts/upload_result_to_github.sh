@@ -43,6 +43,7 @@ allowed_files=(
   "sda_cli_2M.runtime.txt"
   "sda_cli_2M.txt"
   "sda_cli_2M.upload_status.txt"
+  "info.json"
 )
 
 # Find newest file among allowed

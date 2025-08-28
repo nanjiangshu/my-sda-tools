@@ -141,6 +141,17 @@ collect_report() {
     done
     python "$RUNDIR/plot_upload_status.py" "$RESULT_DIR" || echo "Failed to plot upload status"
     python "$RUNDIR/plot_upload_runtime.py" "$RESULT_DIR" || echo "Failed to plot upload runtime"
+
+    # --- Create info.json ---
+    created_at=$(date -u +"%Y-%m-%dT%H:%M:%SZ")  # ISO 8601 UTC
+    uploaded_from=$(curl -s ifconfig.me || echo "unknown")
+
+    cat > "$RESULT_DIR/info.json" <<EOF
+{
+  "CreatedAt": "$created_at",
+  "UploadedFrom": "$uploaded_from"
+}
+EOF
     copy_results
 }
 
