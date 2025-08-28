@@ -22,8 +22,7 @@ TOKEN="$GITHUB_TOKEN"
 REPO="nanjiangshu/my-plots"
 BRANCH="main"
 
-folder=$1
-if [[ -z "$folder" ]]; then
+if [ $# -lt 1 ]; then
   echo "Usage: $0 <folder>"
   exit 1
 fi
