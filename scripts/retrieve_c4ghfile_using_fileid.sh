@@ -5,6 +5,7 @@ set -euo pipefail
 s3cmdconf=/data/project-sda/misc/bp-submission/s3cmd-bp-master-archive.conf
 binpath=/data/project-sda/my-sda-tools/scripts/
 keyfile=c4gh.sec.pem
+outdir=.
 
 usage="""
 Usage: $0 [OPTIONS] <fileid> 
@@ -13,6 +14,7 @@ Options:
   -s3cmdconf <path> Path to the s3cmd configuration file (default: $s3cmdconf)
   -binpath <path>   Path to the scripts directory (default: $binpath)
   -c4ghkey <path>   Path to the c4gh private key file (default: $keyfile)
+  -outdir <path>    Output directory (default: current directory)
 """
 
 if [ "$#" -eq 0 ]; then
@@ -53,6 +55,18 @@ while [[ $# -gt 0 ]]; do
             keyfile=$1
             shift
             ;;
+        -outdir)
+            shift
+            if [ -z "$1" ]; then
+                echo "Error: --outdir requires a path argument."
+                exit 1
+            fi
+            outdir=$1
+            mkdir -p "$outdir"
+            if [[ ! -d "$outdir" ]]; then
+              echo "Error: $outdir is not a directory."
+              exit 1
+            fi
         *)
             fileid=$1
             shift
@@ -84,5 +98,5 @@ s3cmd -c $s3cmdconf get s3://archive-2024-01/$fileid  $tmpdir/$fileid.newstorage
 cat $tmpdir/$fileid.header.bin $tmpdir/$fileid.newstorage > $tmpdir/$fileid.c4gh
 crypt4gh decrypt -s $keyfile -f $tmpdir/$fileid.c4gh
 
-cp $tmpdir/$fileid $fileid
+cp $tmpdir/$fileid $outdir/$fileid
 echo "File retrieved and decrypted successfully: $fileid"
