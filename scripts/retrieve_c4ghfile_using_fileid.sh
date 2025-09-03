@@ -68,6 +68,7 @@ while [[ $# -gt 0 ]]; do
               echo "Error: $outdir is not a directory."
               exit 1
             fi
+            shift
             ;;
         *)
             file_ids+=("$1")
