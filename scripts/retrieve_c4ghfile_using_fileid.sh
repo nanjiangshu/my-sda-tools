@@ -85,10 +85,6 @@ if [ ! -f $binpath/get_header_using_fileid.sh ];then
     echo "Script not found: $binpath/get_header_using_fileid.sh"
     exit 1
 fi
-if [ ! -f $keyfile ];then
-    echo "Private key file not found: $keyfile"
-    exit 1
-fi
 
 if ! vault kv get -field=private_key bp-secrets/crypt4gh > /dev/null 2>&1; then
   echo "Error: Unable to retrieve private key from Vault. Ensure you are logged in and have access."
@@ -97,6 +93,11 @@ fi
 
 vault kv get -field=private_key bp-secrets/crypt4gh > $keyfile 
 export C4GH_PASSPHRASE=$(vault kv get -field=password bp-secrets/crypt4gh)
+
+if [ ! -f $keyfile ];then
+    echo "Private key file not found: $keyfile"
+    exit 1
+fi
 
 tmpdir=$(mktemp -d)
 trap 'rm -rf "$tmpdir"' EXIT
