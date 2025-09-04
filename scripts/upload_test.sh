@@ -15,6 +15,7 @@ SIZES=(2 20 200)    # MB per file
 NUMFILE=100         # number of files per dataset
 RUN_SIZES=()        # sizes to actually run (default = all)
 no_cleanup=false
+uploadMode="newupload"
 
 # ========= Helpers =========
 die() { echo "ERROR: $*" >&2; exit 1; }
@@ -28,6 +29,7 @@ Options:
   -config FILE       Path to s3cmd config file (default: ./s3cmd.conf)
   -binpath DIR       Path to directory containing sda-cli (default: found in \$PATH)
   -outdir DIR        Directory to copy results into (default: current folder)
+  -mode STR          Mode to run the tests in, newupload or overwrite (default: "newupload")
   -size SIZE         Limit operations to one dataset size (can be used multiple times)
   -numfile NUM       Number of files per dataset (default: $NUMFILE)
   -no-cleanup        Do not clean up workdir after run (useful for debugging)
@@ -38,7 +40,10 @@ Subcommands:
   help               Show this help message
 
 Examples:
-  $0 -workdir /tmp/sda-test run
+  $0 -workdir /tmp/sda-test -outdir result run
+
+  # Enable overwrite mode during upload with sda-cli
+  $0 -workdir /tmp/sda-test -outdir result -mode overwrite run
 EOF
 }
 
@@ -51,6 +56,7 @@ parse_args() {
             -binpath)   shift; BINPATH="$1" ;;
             -workdir)   shift; WORKDIR="$1" ;;
             -outdir)    shift; OUTDIR="$1" ;;
+            -mode)      shift; uploadMode="$1" ;;
             -size)      shift; RUN_SIZES+=("$1") ;;
             -numfile)   shift; NUMFILE="$1" ;;
             -no-cleanup) no_cleanup=true ;;
@@ -88,6 +94,10 @@ setup_env() {
         SDA_CLI="$BINPATH/sda-cli"
     fi
     command -v "$SDA_CLI" >/dev/null 2>&1 || die "sda-cli not found at: $SDA_CLI"
+
+    if [ "$uploadMode" != "newupload" ] && [ "$uploadMode" != "overwrite" ]; then
+        die "Invalid upload mode: $uploadMode. Must be one of: newupload, overwrite"
+    fi
 
     if [[ ${#RUN_SIZES[@]} -eq 0 ]]; then
         RUN_SIZES=("${SIZES[@]}")
@@ -132,7 +142,7 @@ create_dataset() {
 
 upload() {
     mkdir -p "$RESULT_DIR"
-    RANDOM_SUFFIX=$((RANDOM % 1000000))
+    UUID_SUFFIX=$(uuidgen | tr '[:upper:]' '[:lower:]')
     for size in "${RUN_SIZES[@]}"; do
         dir="$DATA_DIR/${size}M"
         file="$dir/file_${size}M.bin"
@@ -140,14 +150,30 @@ upload() {
         echo "Uploading dataset ${size}MB ... logging to $log"
         rm -f "$log"
         for i in $(seq 1 $NUMFILE); do
-            {
-                echo "$i: Uploading $file (iteration $i)"
-                time -p "$SDA_CLI" -config "$S3CMDFILE" \
-                    upload -encrypt-with-key "$WORKDIR/c4ghkey.pub.pem" \
-                    --force-overwrite "$file" \
-                    -targetDir "testupload-sda-cli-${size}M-$RANDOM_SUFFIX"
-                rm -f "$file.c4gh"
-            } >> "$log" 2>&1 || echo "ERROR uploading $file (iteration $i)" >> "$log"
+            echo "$i: Uploading $file (iteration $i)" >> "$log"
+
+            if [[ "$uploadMode" == "newupload" ]]; then
+                link="$dir/file_${size}M_${i}.bin"
+                ln -sf "$(basename "$file")" "$link"
+
+                {
+                    time -p "$SDA_CLI" -config "$S3CMDFILE" \
+                        upload -encrypt-with-key "$WORKDIR/c4ghkey.pub.pem" \
+                        "$link" \
+                        -targetDir "testupload-sda-cli-${size}M-${UUID_SUFFIX}"
+                    rm -f "$link.c4gh"
+                } >> "$log" 2>&1 || echo "ERROR uploading $link (iteration $i)" >> "$log"
+
+                rm -f "$link"
+            else
+                {
+                    time -p "$SDA_CLI" -config "$S3CMDFILE" \
+                        upload -encrypt-with-key "$WORKDIR/c4ghkey.pub.pem" \
+                        --force-overwrite "$file" \
+                        -targetDir "testupload-sda-cli-${size}M-${UUID_SUFFIX}"
+                    rm -f "$file.c4gh"
+                } >> "$log" 2>&1 || echo "ERROR uploading $file (iteration $i)" >> "$log"
+            fi
         done
     done
 }
