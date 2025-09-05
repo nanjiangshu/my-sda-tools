@@ -8,6 +8,7 @@ RUNDIR=$(dirname "$(realpath "$0")")
 
 WORKDIR=""
 S3CMDFILE="./s3cmd.conf"
+S3CMD_MASTER_FILE="./s3cmd_master.conf"
 BINPATH=""
 SDA_CLI="sda-cli"
 OUTDIR="."
@@ -27,6 +28,8 @@ Usage: $0 [options] <subcommand>
 Options:
   -workdir DIR       Required. Working directory where datasets/results/keys are stored
   -config FILE       Path to s3cmd config file (default: ./s3cmd.conf)
+  -masterconfig FILE Path to s3cmd master config file (default: ./s3cmd_master.conf)
+                     For deleting files in S3 after uploading
   -binpath DIR       Path to directory containing sda-cli (default: found in \$PATH)
   -outdir DIR        Directory to copy results into (default: current folder)
   -mode STR          Mode to run the tests in, newupload or overwrite (default: "newupload")
@@ -53,6 +56,7 @@ parse_args() {
     while [[ $# -gt 0 ]]; do
         case "$1" in
             -config)    shift; S3CMDFILE="$1" ;;
+            -masterconfig) shift; S3CMD_MASTER_FILE="$1" ;;
             -binpath)   shift; BINPATH="$1" ;;
             -workdir)   shift; WORKDIR="$1" ;;
             -outdir)    shift; OUTDIR="$1" ;;
@@ -195,7 +199,8 @@ collect_report() {
     cat > "$RESULT_DIR/info.json" <<EOF
 {
   "CreatedAt": "$created_at",
-  "UploadedFrom": "$uploaded_from"
+  "UploadedFrom": "$uploaded_from",
+  "UploadMode": "$uploadMode"
 }
 EOF
     copy_results
@@ -209,6 +214,15 @@ copy_results() {
 clean() {
     echo "Cleaning contents of workdir $WORKDIR ..."
     rm -rf "${WORKDIR:?}/"*
+
+    # Trying to clean uploaded files in S3, but it's fine if it fails
+    user_id=$(grep access_key $S3CMDFILE | awk '{print $3}')
+    if [[ -n "$S3CMD_MASTER_FILE" && -n "$user_id" && -n "$UUID_SUFFIX" ]]; then
+        echo "Cleaning uploaded files in S3 ..."
+        for size in "${RUN_SIZES[@]}"; do
+            s3cmd -c "$S3CMD_MASTER_FILE" del -r "s3://staging-inbox/$user_id/testupload-sda-cli-${size}M-${UUID_SUFFIX}/" > /dev/null 2>&1
+        done
+    fi
 }
 
 fetch_pubkey() {
@@ -238,5 +252,5 @@ setup_env
 
 case "$SUBCOMMAND" in
     run)  run ;;
-    help) show_help ;;
+    help) show_help; exit 0 ;;
 esac
