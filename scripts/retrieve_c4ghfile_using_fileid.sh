@@ -114,6 +114,7 @@ for fileid in "${file_ids[@]}"; do
     bash $binpath/get_header_using_fileid.sh $fileid | xxd -r -p > $tmpdir/$fileid.header.bin
     s3cmd -c $s3cmdconf get s3://archive-2024-01/$fileid  $tmpdir/$fileid.newstorage
     cat $tmpdir/$fileid.header.bin $tmpdir/$fileid.newstorage > $tmpdir/$fileid.c4gh
+    cp $tmpdir/$fileid.c4gh $outdir/$fileid.bak.c4gh
     crypt4gh decrypt -s $keyfile -f $tmpdir/$fileid.c4gh
 
     cp $tmpdir/$fileid $outdir/$fileid

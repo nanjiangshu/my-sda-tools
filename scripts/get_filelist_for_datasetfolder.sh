@@ -83,7 +83,7 @@ fi
 if [ "$server" == "prod" ]; then
     bucket="inbox-2024-01"
 elif [ "$server" == "staging" ]; then
-    bucket="staging-2024-01"
+    bucket="staging-inbox"
 else
     # This block is redundant due to the previous check, but good for clarity
     echo "Error: Invalid server setting."
