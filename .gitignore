@@ -1,0 +1,4 @@
+scripts/rst[0-9]*/
+scripts/test_*/
+scripts/example_upload_result[0-9]*/
+.DS_Store
