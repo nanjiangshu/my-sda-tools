@@ -83,7 +83,12 @@ json_payload=$(cat <<EOF
         }
       ]
     }
-  }
+  },
+  "sort": [
+    {
+      "@timestamp": "asc"
+    }
+  ]
 EOF
 )
 
