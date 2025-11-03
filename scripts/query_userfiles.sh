@@ -58,4 +58,23 @@ RunNewQuery() {
     " | sort -u | grep "${dataset_folder:-.*}" 
 }
 
-RunNewQuery "$user_id" "${dataset_folder}"
+RunNewQueryImproved() {
+    local user_id="$1"
+    local dataset_folder="$2"
+    kubectl -n sda-prod exec svc/postgres-cluster-ro -c postgres -- psql -tA -U postgres -d sda -c "
+with last_entries as (
+	select distinct on (file_id) * from sda.file_event_log
+	where file_id in (select id from sda.files 
+	where submission_file_path like '%$dataset_folder%' AND submission_user='$user_id' )
+	order by file_id, id desc
+)
+
+select le.file_id, f.submission_file_path, f.stable_id, le.event, f.created_at from last_entries le 
+left join sda.files f on f.id=le.file_id
+AND NOT EXISTS (SELECT 1 FROM sda.file_dataset d WHERE f.id = d.file_id);
+    "  
+}
+
+
+
+RunNewQueryImproved "$user_id" "${dataset_folder}"
