@@ -1,35 +1,80 @@
 #!/bin/bash
-# this script checks the file status statistics
+# this script checks the file status statistics for user files in a given dataset folder using database queries
 
 set -euo pipefail
 
 SCRIPT_DIR=$(dirname "$0")
-binpath=$(realpath "$SCRIPT_DIR")
+binpath=$(realpath -- "$SCRIPT_DIR") # Added -- for robustness
 
 usage="""
-Usage: $0 <user> <dataset_folder> <outdir>
-<user> : the LSAAI user ID
-<dataset_folder> : the dataset folder name
-<outdir> : directory to save intermediate and final results
+Usage: $0 [--overwrite] -u <user> -d <dataset_folder> -o <outdir>
+-u <user>           : the LSAAI user ID
+-d <dataset_folder> : the dataset folder name
+-o <outdir>         : directory to save intermediate and final results
+--overwrite         : (optional) overwrite existing files in the output directory except for the final status list file
 """
 
-if [ $# -ne 3 ]; then
-  echo "$usage"
-  exit 1
-fi
+user=
+dataset_folder=
+outdir=
+overwrite=false
 
-user="$1"
-dataset_folder="$2"
-outdir="$3"
+while [[ $# -gt 0 ]]; do
+    key="$1"
+    case $key in
+        -u)
+            user="$2"
+            shift
+            shift
+            ;;
+        -d)
+            dataset_folder="$2"
+            shift
+            shift
+            ;;
+        -o)
+            outdir="$2"
+            shift
+            shift
+            ;;
+        --overwrite)
+            overwrite=true
+            shift
+            ;;
+        *)
+            echo "Unknown option: $key"
+            echo "$usage"
+            exit 1
+            ;;
+    esac
+done
+
+if [ -z "$user" ] || [ -z "$dataset_folder" ] || [ -z "$outdir" ]; then
+    echo "Error: Missing required arguments."
+    echo "$usage"
+    exit 1
+fi
 
 if [ ! -d "$outdir" ]; then
-  mkdir -p "$outdir"
+    mkdir -p "$outdir"
 fi
 
-bash $binpath/query_userfiles.sh $user $dataset_folder > $outdir/$dataset_folder.userfiles.txt
+if [[ "$overwrite" == "false" || ! -f "$outdir/$dataset_folder.userfiles.txt" ]]; then
+    bash "$binpath/query_userfiles.sh" "$user" "$dataset_folder" > "$outdir/$dataset_folder.userfiles.txt"
+fi
 
-awk -F\| '{print $1}'  $outdir/$dataset_folder.userfiles.txt  | sort -u > $outdir/$dataset_folder.fileidlist.txt
+if [ ! -s "$outdir/$dataset_folder.userfiles.txt" ]; then
+    echo "No user files found for user: $user in dataset folder: $dataset_folder"
+    exit 1
+fi
 
-bash $binpath/query_status_in_fileeventlog_with_fileidlist.sh $outdir/$dataset_folder.fileidlist.txt  > $outdir/$dataset_folder.status.list.txt
+# Variables quoted, clearer awk -F
+if [[ "$overwrite" == "false" || ! -f "$outdir/$dataset_folder.fileidlist.txt" ]]; then
+    awk -F'|' '{print $1}' "$outdir/$dataset_folder.userfiles.txt" | sort -u > "$outdir/$dataset_folder.fileidlist.txt"
+fi
 
-awk -F\| '{print $2}' $outdir/$dataset_folder.status.list.txt | awk -F, '{print $1}' | sort | uniq -c
+# Variables quoted
+bash "$binpath/query_status_in_fileeventlog_with_fileidlist.sh" "$outdir/$dataset_folder.fileidlist.txt" > "$outdir/$dataset_folder.status.list.txt"
+
+# Variables quoted, clearer awk -F
+awk -F'|' '{print $2}' "$outdir/$dataset_folder.status.list.txt" | awk -F, '{print $1}' | sort | uniq -c
