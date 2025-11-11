@@ -11,6 +11,7 @@ fi
 
 file=$1
 batch_size=${2:-100}  # Set batch size to 2nd arg, with default of 100.
+DB_APP_NAME=svc/postgres-cluster-r
 
 # Check if file exists.
 if [ ! -f "$file" ]; then
@@ -29,7 +30,7 @@ for ((i=0; i<total; i+=batch_size)); do
   file_ids_str=$(printf "'%s'," "${file_ids_slice[@]}")
   file_ids_str=${file_ids_str%?}  # Remove trailing comma
 
-  kubectl -n sda-prod exec svc/postgres-cluster-ro -c postgres -- psql -U postgres -tA -d sda -c "
+  kubectl -n sda-prod exec $DB_APP_NAME -c postgres -- psql -U postgres -tA -d sda -c "
   WITH ordered_events AS (
       SELECT file_id, event 
       FROM sda.file_event_log

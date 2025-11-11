@@ -5,6 +5,7 @@ usage="""
 Usage: $0 <filepath>
 """
 
+DB_APP_NAME=svc/postgres-cluster-r 
 filepath=$1
 
 if [ "$filepath" == "" ];then
@@ -14,7 +15,7 @@ fi
 
 file_path=$(echo "$filepath" | xargs)
 
-file_id=$(kubectl -n sda-prod exec svc/postgres-cluster-ro -c postgres -- psql -U postgres -t -d sda -c "
+file_id=$(kubectl -n sda-prod exec $DB_APP_NAME -c postgres -- psql -U postgres -t -d sda -c "
 SELECT file_id FROM sda.file_event_log 
 WHERE message->>'filepath' LIKE '%"$file_path"%'
 LIMIT 1
@@ -22,7 +23,7 @@ LIMIT 1
 
 file_id=$(echo "$file_id" | awk '{$1=$1;print}')
 
-kubectl -n sda-prod exec svc/postgres-cluster-ro -c postgres -- psql -U postgres -tA -d sda -c "
+kubectl -n sda-prod exec $DB_APP_NAME -c postgres -- psql -U postgres -tA -d sda -c "
 SELECT event FROM sda.file_event_log
 WHERE file_id = '$file_id'
 ORDER BY started_at DESC
