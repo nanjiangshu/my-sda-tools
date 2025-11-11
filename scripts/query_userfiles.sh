@@ -17,10 +17,12 @@ if [ -z "$user_id" ]; then
     exit 1
 fi
 
+DB_APP_NAME=svc/postgres-cluster-r 
+
 RunOldQuery() {
     local user_id="$1"
     local dataset_folder="$2"
-    kubectl -n sda-prod exec svc/postgres-cluster-ro -c postgres -- psql -tA -U postgres -d sda -c "
+    kubectl -n sda-prod exec $DB_APP_NAME -c postgres -- psql -tA -U postgres -d sda -c "
     SELECT f.id, f.submission_file_path, e.event, f.created_at 
     FROM sda.files f
     LEFT JOIN (
@@ -38,7 +40,7 @@ RunOldQuery() {
 RunNewQuery() {
     local user_id="$1"
     local dataset_folder="$2"
-    kubectl -n sda-prod exec svc/postgres-cluster-ro -c postgres -- psql -tA -U postgres -d sda -c "
+    kubectl -n sda-prod exec $DB_APP_NAME -c postgres -- psql -tA -U postgres -d sda -c "
     SELECT f.id, 
            f.submission_file_path, 
            file_events.event, 
@@ -61,7 +63,7 @@ RunNewQuery() {
 RunNewQueryImproved() {
     local user_id="$1"
     local dataset_folder="$2"
-    kubectl -n sda-prod exec svc/postgres-cluster-ro -c postgres -- psql -tA -U postgres -d sda -c "
+    kubectl -n sda-prod exec $DB_APP_NAME -c postgres -- psql -tA -U postgres -d sda -c "
 with last_entries as (
 	select distinct on (file_id) * from sda.file_event_log
 	where file_id in (select id from sda.files 
