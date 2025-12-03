@@ -11,6 +11,7 @@ Usage: $0 [--overwrite] -u <user> -d <dataset_folder> -o <outdir>
 -u <user>           : the LSAAI user ID
 -d <dataset_folder> : the dataset folder name
 -o <outdir>         : directory to save intermediate and final results
+-b <batch_size>    : (optional) number of file IDs to process per batch (default: 500)
 --overwrite         : (optional) overwrite existing files in the output directory except for the final status list file
 """
 
@@ -18,7 +19,7 @@ user=
 dataset_folder=
 outdir=
 overwrite=false
-
+batch_size=500
 while [[ $# -gt 0 ]]; do
     key="$1"
     case $key in
@@ -34,6 +35,11 @@ while [[ $# -gt 0 ]]; do
             ;;
         -o)
             outdir="$2"
+            shift
+            shift
+            ;;
+        -b)
+            batch_size="$2"
             shift
             shift
             ;;
@@ -74,7 +80,7 @@ if [[ "$overwrite" == "false" || ! -f "$outdir/$dataset_folder.fileidlist.txt" ]
 fi
 
 # Variables quoted
-bash "$binpath/query_status_in_fileeventlog_with_fileidlist.sh" "$outdir/$dataset_folder.fileidlist.txt" > "$outdir/$dataset_folder.status.list.txt"
+bash "$binpath/query_status_in_fileeventlog_with_fileidlist.sh" "$outdir/$dataset_folder.fileidlist.txt" $batch_size > "$outdir/$dataset_folder.status.list.txt"
 
 # Variables quoted, clearer awk -F
 awk -F'|' '{print $2}' "$outdir/$dataset_folder.status.list.txt" | awk -F, '{print $1}' | sort | uniq -c
