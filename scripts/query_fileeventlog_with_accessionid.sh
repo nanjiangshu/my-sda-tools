@@ -8,16 +8,14 @@ if [ "$accessionID" == "" ];then
     exit 1
 fi
 
-file_id=$(kubectl -n sda-prod exec svc/postgres-cluster-ro -c postgres -- psql -U postgres -t -d sda -c "
-SELECT file_id FROM sda.file_event_log 
-WHERE message->>'accession_id' = '$accessionID'
-LIMIT 1
-")
-
-file_id=$(echo "$file_id" | awk '{$1=$1;print}')
-
-kubectl -n sda-prod exec svc/postgres-cluster-ro -c postgres -- psql -U postgres -t -d sda -c "
-SELECT * FROM sda.file_event_log
-WHERE file_id = '$file_id'
-ORDER BY started_at DESC
+kubectl -n sda-prod exec svc/postgres-cluster-ro -c postgres -- \
+psql -U postgres -t -d sda -c "
+SELECT *
+FROM sda.file_event_log
+WHERE file_id = (
+  SELECT id
+  FROM sda.files
+  WHERE stable_id = '$accessionID'
+)
+ORDER BY started_at DESC;
 "
