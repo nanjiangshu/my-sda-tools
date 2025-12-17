@@ -1,14 +1,13 @@
 #!/bin/bash
-# This script queries the checksums table in the sda database for a given file path.
+# This script queries the checksums table in the sda database for a given accession ID. 
 
 if [ "$#" -ne 1 ]; then
-    echo "Usage: $0 <filepath>"
+    echo "Usage: $0 <accessionID>"
     exit 1
 fi
-
-filepath=$1
-
-if [ "$filepath" == "" ];then
+accessionID=$1
+  
+if [ "$accessionID" == "" ];then
     exit 1
 fi
 
@@ -19,6 +18,6 @@ FROM sda.checksums
 WHERE file_id = (
   SELECT id
   FROM sda.files
-  WHERE submission_file_path LIKE '%"$filepath"%'
+  WHERE stable_id == '$accessionID' 
 )
 "
