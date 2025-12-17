@@ -18,6 +18,6 @@ FROM sda.checksums
 WHERE file_id = (
   SELECT id
   FROM sda.files
-  WHERE stable_id == '$accessionID' 
+  WHERE stable_id = '$accessionID' 
 )
 "
