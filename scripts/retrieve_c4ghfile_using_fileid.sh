@@ -105,18 +105,35 @@ trap 'rm -rf "$tmpdir"' EXIT
 
 
 for fileid in "${file_ids[@]}"; do
+    RetrieveFile $fileid
+done
+
+
+RetrieveFile(){
+    local fileid=$1
     if [[ -z "$fileid" ]]; then
         echo "Error: Empty file ID provided."
-        exit 1
+        return 1 
     fi
     echo "Processing file ID: $fileid"
 
     bash $binpath/get_header_using_fileid.sh $fileid | xxd -r -p > $tmpdir/$fileid.header.bin
     s3cmd -c $s3cmdconf get s3://archive-2024-01/$fileid  $tmpdir/$fileid.newstorage
+
+    if [ ! -s $tmpdir/$fileid.newstorage ];then
+        echo "Error: Retrieved archived file is empty for file ID: $fileid"
+        echo "Try another bucket"
+        s3cmd -c $s3cmdconf get s3://archive-2025-11/$fileid  $tmpdir/$fileid.newstorage
+        if [ ! -s $tmpdir/$fileid.newstorage ];then
+            echo "Error: Retrieved archived file is still empty for file ID: $fileid"
+            return 1
+        fi
+    fi
+
     cat $tmpdir/$fileid.header.bin $tmpdir/$fileid.newstorage > $tmpdir/$fileid.c4gh
     cp $tmpdir/$fileid.c4gh $outdir/$fileid.bak.c4gh
     crypt4gh decrypt -s $keyfile -f $tmpdir/$fileid.c4gh
 
     cp $tmpdir/$fileid $outdir/$fileid
     echo "File retrieved and decrypted successfully: $fileid"
-done
+}
