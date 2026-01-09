@@ -25,32 +25,48 @@ RetrieveFile(){
         echo "Error: Empty file ID provided."
         return 1 
     fi
-    echo "Processing file ID: $fileid"
+    echo "--- Processing file ID: $fileid ---"
 
-    # Hex to binary for the header
-    bash "$binpath/get_header_using_fileid.sh" "$fileid" | xxd -r -p > "$tmpdir/$fileid.header.bin"
-    
-    # Attempt S3 retrieval
-    s3cmd -c "$s3cmdconf" get "s3://archive-2024-01/$fileid" "$tmpdir/$fileid.newstorage"
+    # 1. Get the header. 
+    # Using 'if !' ensures that if the script fails, we can catch it manually 
+    # rather than having the whole script crash due to 'set -e'.
+    if ! bash "$binpath/get_header_using_fileid.sh" "$fileid" | xxd -r -p > "$tmpdir/$fileid.header.bin"; then
+        echo "Error: Failed to retrieve or convert header for $fileid"
+        return 1
+    fi
 
-    if [ ! -s "$tmpdir/$fileid.newstorage" ]; then
-        echo "Error: Retrieved archived file is empty for file ID: $fileid. Trying 2025 bucket..."
-        s3cmd -c "$s3cmdconf" get "s3://archive-2025-11/$fileid" "$tmpdir/$fileid.newstorage"
+    # 2. Attempt retrieval from the first S3 bucket
+    echo "Attempting download from archive-2024-01..."
+    if ! s3cmd -c "$s3cmdconf" get "s3://archive-2024-01/$fileid" "$tmpdir/$fileid.newstorage"; then
+        echo "File not found in 2024-01 bucket. Trying archive-2025-11..."
         
-        if [ ! -s "$tmpdir/$fileid.newstorage" ]; then
-            echo "Error: Retrieved archived file is still empty for file ID: $fileid"
+        # 3. Fallback: Attempt retrieval from the second S3 bucket
+        if ! s3cmd -c "$s3cmdconf" get "s3://archive-2025-11/$fileid" "$tmpdir/$fileid.newstorage"; then
+            echo "Error: File $fileid could not be found in either bucket."
             return 1
         fi
     fi
 
-    # Concatenate and Decrypt
+    # 4. Verify the file actually has content before proceeding
+    if [ ! -s "$tmpdir/$fileid.newstorage" ]; then
+        echo "Error: Retrieved file $fileid is empty (0 bytes)."
+        return 1
+    fi
+
+    # 5. Concatenate and Decrypt
     cat "$tmpdir/$fileid.header.bin" "$tmpdir/$fileid.newstorage" > "$tmpdir/$fileid.c4gh"
+    
+    # Optional: Backup the encrypted combined file
     cp "$tmpdir/$fileid.c4gh" "$outdir/$fileid.bak.c4gh"
     
-    # Decrypting
-    crypt4gh decrypt -s "$keyfile" -f "$tmpdir/$fileid.c4gh" 
+    echo "Decrypting $fileid..."
+    if ! crypt4gh decrypt -s "$keyfile" -f "$tmpdir/$fileid.c4gh" ; then
+        echo "Error: Decryption failed for $fileid. Check your passphrase or key."
+        return 1
+    fi
+    mv "$tmpdir/$fileid" "$outdir/$fileid"
 
-    echo "File retrieved and decrypted successfully: $fileid"
+    echo "Success: $fileid is ready in $outdir"
 }
 
 # --- Argument Parsing ---
