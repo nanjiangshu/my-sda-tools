@@ -48,7 +48,7 @@ RetrieveFile(){
     cp "$tmpdir/$fileid.c4gh" "$outdir/$fileid.bak.c4gh"
     
     # Decrypting
-    crypt4gh decrypt -s "$keyfile" < "$tmpdir/$fileid.c4gh" > "$tmpdir/$fileid.decrypted"
+    crypt4gh decrypt -s "$keyfile" -f "$tmpdir/$fileid.c4gh" -o "$tmpdir/$fileid.decrypted"
 
     cp "$tmpdir/$fileid.decrypted" "$outdir/$fileid"
     echo "File retrieved and decrypted successfully: $fileid"
