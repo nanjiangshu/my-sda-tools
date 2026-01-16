@@ -106,8 +106,12 @@ main_process() {
 
             # 2. Decrypt
             echo "Decrypting..."
-            if crypt4gh decrypt -s "$KEYFILE" -f "$local_file" > "$decrypted_local_file"; then
+            if crypt4gh decrypt -s "$KEYFILE" -f "$local_file"; then
                 # 3. Upload Decrypted
+                if [ ! -f "$decrypted_local_file" ]; then
+                    echo "❌ Decrypted file not found: $decrypted_local_file"
+                    continue
+                fi
                 echo "Uploading decrypted version..."
                 s3cmd -c "$S3_CONFIG" put "$decrypted_local_file" "$decrypted_s3_path"
                 
