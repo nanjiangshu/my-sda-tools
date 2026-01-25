@@ -1,19 +1,18 @@
 #!/usr/bin/env bash
-
 setup_sda_kubeconfig() {
-    local ENV_NAME="bp-v2"
+    local ENV_NAME="fega-v2"
     local SDA_DIR="$HOME/.sda"
-    local KEY_FILE="$SDA_DIR/bp-private.pem"
-    local KUBECONFIG_FILE="$SDA_DIR/kubeconfig_bp.yaml"
+    local KEY_FILE="$SDA_DIR/fega-private.pem"
+    local KUBECONFIG_FILE="$SDA_DIR/kubeconfig_fega.yaml"
     local SCRIPT_PATH=""
     local TMP_BIN_DIR=$(mktemp -d)
 
     if [[ -d "/data3/project-sda" ]]; then
-        SCRIPT_PATH="/data3/project-sda/BigPicture-Deployment/cluster_v2/k8s_cluster/scripts/get_kubeconfig.sh"
+        SCRIPT_PATH="/data3/project-sda/LocalEGA-SE-Deployment/production/fega_v2/cluster/scripts/get_kubeconfig.sh"
     elif [[ -d "$HOME/project-sda" ]]; then
-        SCRIPT_PATH="$HOME/project-sda/BigPicture-Deployment/cluster_v2/k8s_cluster/scripts/get_kubeconfig.sh"
+        SCRIPT_PATH="$HOME/project-sda/LocalEGA-SE-Deployment/production/fega_v2/cluster/scripts/get_kubeconfig.sh"
     else
-        echo "❌ ERROR: BigPicture-Deployment directory not found in /data3 or $HOME"
+        echo "❌ ERROR: LocalEGA-SE-Deployment directory not found in /data3 or $HOME"
         rm -rf "$TMP_BIN_DIR"
         return 1
     fi
