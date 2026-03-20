@@ -1,54 +1,78 @@
 #!/usr/bin/env bash
-
-set -euo pipefail
-# This script generates sync message json files for each item in the input file.
+# this script takes a list of stable IDs and a dataset ID, and creates JSON files in the format expected by the sync message system.
+# The JSON files will have the following structure:
+# {
+#   "type": "mapping",
+#   "dataset_id": "datasetID",
+#   "accession_ids": ["stableID1", "stableID2", ...]
+# }
 
 usage="
-Usage: $0 -d <datasetID> -f <stableid_list_file> -o <output_json_file>
+Usage: $0 -d <datasetID> -f <stableid_list_file> [-o <output_prefix>] [-s <size>]
   -d <datasetID>            The dataset ID to include in the sync message.
   -f <stableid_list_file>   A file containing a list of stable IDs, one per line.
-  -o <output_json_file>     The output JSON file to write the sync message to, default is <stableid_list_file>.json
+  -o <output_prefix>        The prefix for output JSON files.
+  -s <size>                 Max IDs per file (default: 3000).
 "
 
-if [ "$#" -lt 2 ]; then
-    echo "$usage"
-    exit 1
-fi
 datasetID=""
 stableid_list_file=""
-output_json_file=""
+output_prefix=""
+chunk_size=3000
 
-while getopts "d:f:o:" opt; do
+while getopts "d:f:o:s:" opt; do
     case $opt in
         d) datasetID="$OPTARG" ;;
         f) stableid_list_file="$OPTARG" ;;
-        o) output_json_file="$OPTARG" ;;
-        *) echo "$usage"
-           exit 1 ;;
+        o) output_prefix="$OPTARG" ;;
+        s) chunk_size="$OPTARG" ;;
+        *) echo "$usage"; exit 1 ;;
     esac
 done
 
-if [ -z "${datasetID:-}" ]; then
-    echo "Error: Dataset ID is required!"
+# Validation
+if [[ -z "${datasetID}" || ! -f "${stableid_list_file}" ]]; then
+    echo "Error: Missing dataset ID or input file."
     echo "$usage"
     exit 1
-fi  
-
-if [ ! -f "${stableid_list_file:-}" ]; then
-    echo "Error: File '${stableid_list_file:-}' not found!"
-    exit 1
 fi
 
-if [ -z "${output_json_file:-}" ]; then
-    output_json_file="${stableid_list_file}.json"
+if [[ -z "${output_prefix}" ]]; then
+    output_prefix="${stableid_list_file%.*}"
 fi
 
-# remove trailing white space both beginning and end for the stableid list file
-sed -i 's/^[[:space:]]\+//;s/[[:space:]]\+$//' "${stableid_list_file}"
+# 1. Clean IDs (Cross-platform mktemp)
+# On macOS mktemp needs a template; on Linux it's optional. Using a template works on both.
+clean_file=$(mktemp /tmp/clean_ids.XXXXXX)
+sed 's/^[[:space:]]\+//;s/[[:space:]]\+$//' "${stableid_list_file}" > "$clean_file"
 
-# use the -c flag for jq so that the result is in one line
-jq -Rnc '{type: "mapping", dataset_id: $dataset, accession_ids: [inputs]}' \
---arg dataset "$datasetID" \
-<  "${stableid_list_file}" > "${output_json_file}"
+# 2. Create temporary directory for chunks
+tmp_dir=$(mktemp -d /tmp/chunks.XXXXXX)
 
-echo "Generated sync message file: ${output_json_file}"
+# 3. Universal Split
+# We use only -l and -a (suffix length), which are standard on both systems.
+# This will create files like: chunk_aa, chunk_ab, chunk_ac...
+split -l "$chunk_size" -a 2 "$clean_file" "$tmp_dir/chunk_"
+
+# 4. Process and Rename (The logic that makes it look like _00, _01)
+counter=0
+# Sort ensures we process aa, ab, ac in order
+for chunk in $(ls "$tmp_dir"/chunk_* | sort); do
+    # Format number to 2 digits (00, 01, 02...)
+    suffix=$(printf "%02d" "$counter")
+    current_output="${output_prefix}_${suffix}.json"
+
+    # Use jq to build the JSON
+    jq -Rnc '{type: "mapping", dataset_id: $dataset, accession_ids: [inputs]}' \
+    --arg dataset "$datasetID" \
+    < "$chunk" > "$current_output"
+
+    echo "Generated: $current_output"
+    counter=$((counter + 1))
+done
+
+# Cleanup
+rm -f "$clean_file"
+rm -rf "$tmp_dir"
+
+echo "Success: Processed $((counter)) file(s)."
