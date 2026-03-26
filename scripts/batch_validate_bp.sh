@@ -1,5 +1,5 @@
 #!/bin/bash
-set -euo pipefail
+# set -euo pipefail
 
 usage="Usage: $0 [-l listfile] [--run] [--check-vault] [dataset_folder_id1 dataset_folder_id2 ...]
 
@@ -8,7 +8,6 @@ Batch validate dataset folders using the validator.sh script.
 Options:
   -l, --list       Path to a file containing dataset IDs (one per line)
   --run            Execute the validation (defaults to dry-run)
-  --check-vault    Verify Vault authentication before proceeding
   -h, --help       Display this help message"
 
 dataset_folder_list=()
