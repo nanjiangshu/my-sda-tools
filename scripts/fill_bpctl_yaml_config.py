@@ -85,7 +85,7 @@ def generate_config():
     # 4. Write the final config
     try:
         with open(OUTPUT_FILE, 'w') as f:
-            yaml.dump(config_data, f, default_flow_style=False, sort_keys=False)
+            yaml.dump(config_data, f, default_flow_style=False, sort_keys=False, width=float('inf'))
             print(f"✅ Successfully generated: {OUTPUT_FILE}")
     except PermissionError:
         print(f"❌ ERROR: Permission denied when writing to: {OUTPUT_FILE}")
