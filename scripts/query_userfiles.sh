@@ -17,7 +17,7 @@ if [ -z "$user_id" ]; then
     exit 1
 fi
 
-DB_APP_NAME=svc/postgres-cluster-r 
+DB_APP_NAME=svc/postgres-cluster-ro
 
 RunOldQuery() {
     local user_id="$1"

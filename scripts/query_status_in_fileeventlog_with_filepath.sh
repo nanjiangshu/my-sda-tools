@@ -5,8 +5,8 @@ usage="""
 Usage: $0 <filepath>
 """
 
-DB_APP_NAME=svc/postgres-cluster-r
-filepath=$1
+DB_APP_NAME=svc/postgres-cluster-ro
+filepath="$1"
 
 if [ "$filepath" == "" ];then
     echo "$usage"

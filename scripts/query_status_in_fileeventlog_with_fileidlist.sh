@@ -11,7 +11,7 @@ fi
 
 file=$1
 batch_size=${2:-100}  # Set batch size to 2nd arg, with default of 100.
-DB_APP_NAME=svc/postgres-cluster-r
+DB_APP_NAME=svc/postgres-cluster-ro
 
 # Check if file exists.
 if [ ! -f "$file" ]; then
