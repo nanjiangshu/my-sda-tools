@@ -90,6 +90,10 @@ if [[ ${#dataset_folder_list[@]} -eq 0 ]]; then
     exit 1
 fi
 
+# Update inbox file list
+inbox_file="/data3/project-sda/misc/bp-submission/inbox-all.s3.txt"
+s3cmd -c /data3/project-sda/misc/bp-submission/s3cmd-bp-master-inbox.conf ls -r  s3://inbox-2024-01 > $inbox_file
+
 for dataset_folder in "${dataset_folder_list[@]}"; do
     [[ -z "$dataset_folder" ]] && continue
 
@@ -102,7 +106,7 @@ for dataset_folder in "${dataset_folder_list[@]}"; do
     (
         cd "$dataset_folder"
         
-        user=$(grep "$dataset_folder" /data3/project-sda/misc/bp-submission/inbox-all.s3.txt | head -n 1 | awk '{print $NF}' | awk -F'/' '{print $4}' | tr '_' '@')
+        user=$(grep "$dataset_folder" "$inbox_file" | head -n 1 | awk '{print $NF}' | awk -F'/' '{print $4}' | tr '_' '@')
         
         if [[ -z "$user" ]]; then
             echo "Warning: Could not find user for $dataset_folder. Skipping..."
