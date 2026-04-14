@@ -76,7 +76,8 @@ fi
 # Load IDs from list file
 if [[ -n "$list_file" ]]; then
     if [[ -f "$list_file" ]]; then
-        mapfile -t file_folders < "$list_file"
+        # Read dataset folder IDs from the list file, trimming whitespace
+        mapfile -t file_folders < <(sed 's/^[[:space:]]*//;s/[[:space:]]*$//' "$list_file")
         dataset_folder_list+=("${file_folders[@]}")
     else
         echo "Error: List file '$list_file' not found."
@@ -104,7 +105,7 @@ for dataset_folder in "${dataset_folder_list[@]}"; do
     mkdir -p "$dataset_folder"
     
     (
-        cd "$dataset_folder"
+        cd "$dataset_folder" || { echo "Failed to change directory to $dataset_folder"; exit 1; }
         
         user=$(grep "$dataset_folder" "$inbox_file" | head -n 1 | awk '{print $NF}' | awk -F'/' '{print $4}' | tr '_' '@')
         
