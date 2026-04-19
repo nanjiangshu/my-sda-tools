@@ -12,6 +12,60 @@ S3_CONF_FILE = '/data3/project-sda/misc/bp-submission/s3cmd-bp-download.conf'
 # Hard-coded values
 HARDCODED_MAIL = "bp-notify@nbis.se"
 
+def get_dataset_id():
+    """extract dataset ID from the file dataset_id.txt in the current directory.
+    if this file does not exist or is empty, fetch from the environment variable DATASET_ID. If both are missing, exit with an error.
+    """
+    try:
+        with open('dataset_id.txt', 'r') as f:
+            dataset_id = f.read().strip()
+            if not dataset_id:
+                raise ValueError("dataset_id.txt is empty")
+            return dataset_id
+    except FileNotFoundError:
+        env_dataset_id = os.getenv("DATASET_ID")
+        if env_dataset_id:
+            return env_dataset_id
+        print("❌ ERROR: dataset_id.txt not found and DATASET_ID environment variable is not set.")
+        sys.exit(1)
+    except Exception as e:
+        print(f"❌ ERROR: Could not read dataset ID: {e}")
+        sys.exit(1)
+
+def get_user_id():
+    """Fetches the user ID from ../inbox-all.s3.txt, or if that fails, from the environment variable USER_ID."""
+    dataset_folder = os.getenv("DATASET_FOLDER")
+    if not dataset_folder:
+        print("❌ ERROR: DATASET_FOLDER environment variable is not set.")
+        sys.exit(1)
+    inbox_file = '../inbox-all.s3.txt'
+    #  grep  $DATASET_FOLDER  inbox-all.s3.txt | awk '{print $NF}' | awk -F'/' '{print $4}' | sort | uniq -c
+    # if the above command has more than two lines, it means there are multiple users for this dataset, which is an error. If it has exactly one line, we can extract the user ID from it. If it has zero lines, we fall back to the environment variable.
+    try:
+        cmd = f"grep {dataset_folder} {inbox_file} | awk '{{print $NF}}' | awk -F'/' '{{print $4}}' | sort | uniq -c"
+        result = subprocess.check_output(cmd, shell=True, text=True).strip()
+        lines = result.splitlines()
+        if len(lines) > 1:
+            print(f"❌ ERROR: Multiple users found for dataset folder '{dataset_folder}' in {inbox_file}:")
+            print(result)
+            sys.exit(1)
+        elif len(lines) == 1:
+            user_id = lines[0].split()[-1]
+            # replace underscores with @ in the user ID
+            user_id = user_id.replace('_', '@')
+            return user_id
+    except subprocess.CalledProcessError:
+        print(f"⚠️ WARNING: Could not find user ID for dataset folder '{dataset_folder}' in {inbox_file}. Falling back to USER_ID environment variable.")   
+
+    user_id = os.getenv("USER_ID")
+    if not user_id:
+        print("❌ ERROR: USER_ID environment variable is not set.")
+        sys.exit(1)
+    # replace underscores with @ in the user ID
+    user_id = user_id.replace('_', '@')
+    return user_id
+
+
 def get_vault_password():
     """Fetches the email password from HashiCorp Vault."""
     try:
@@ -66,6 +120,12 @@ def generate_config():
         # Case 3: Fetch Password from Vault
         elif key == "MAIL_PASSWORD":
             config_data[key] = get_vault_password()
+
+        elif key == "DATASET_ID":
+            config_data[key] = get_dataset_id()
+        
+        elif key == "USER_ID":
+            config_data[key] = get_user_id()
             
         # Case 4: Everything else from Environment Variables
         else:
