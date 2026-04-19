@@ -1,8 +1,14 @@
 #!/usr/bin/env python
 import os
-import yaml
 import sys
 import subprocess
+import importlib
+
+try:
+    yaml = importlib.import_module("yaml")
+except ImportError:
+    print("❌ ERROR: Missing dependency 'PyYAML'. Install it with: pip install pyyaml")
+    sys.exit(1)
 
 # Paths
 TEMPLATE_FILE = '/data3/project-sda/sda-bpctl/config.yaml.example'
@@ -97,6 +103,16 @@ def get_access_token():
         sys.exit(1)
 
 def generate_config():
+    # the current folder name must be the same as the DATASET_FOLDER environment variable. This is a safety check to ensure we are generating the config for the correct dataset.
+    dataset_folder = os.getenv("DATASET_FOLDER")
+    if not dataset_folder:
+        print("❌ ERROR: DATASET_FOLDER environment variable is not set. This variable must be set to the name of the dataset folder (e.g., 'dataset-12345').")
+        sys.exit(1)
+    current_folder = os.path.basename(os.getcwd())
+    if current_folder != dataset_folder:
+        print(f"❌ ERROR: Current folder '{current_folder}' does not match DATASET_FOLDER '{dataset_folder}'. Please navigate to the correct dataset folder before running this script.")
+        sys.exit(1)
+
     # 1. Load the template
     try:
         with open(TEMPLATE_FILE, 'r') as f:
