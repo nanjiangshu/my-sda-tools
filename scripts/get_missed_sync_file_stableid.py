@@ -3,6 +3,8 @@
 import argparse
 import sys
 
+# syncedfile.txt is the output of "s3cmd ls -r s3://bigpicture-202603/$DATASET_FOLDER" and contains the list of files that have been synced to the S3 bucket.
+# stableid_filepath.txt is the output of "get_file_stableids_from_datasetid.sh" and contains the list of stable IDs and their corresponding file paths.
 
 def main():
     parser = argparse.ArgumentParser(description="Find StableIDs whose files are missing in the sync list.")

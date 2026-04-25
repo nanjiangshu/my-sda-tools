@@ -52,7 +52,8 @@ numFileInbox=$(cat $DATASET_FOLDER.filelist.txt | wc -l)
 numMapped=$(cat $DATASET_FOLDER.mapped_stableids.txt | wc -l)
 
 # check if all files are synced
-numSynced=$(s3cmd -c $S3CMD_CONFIG ls -r s3://bigpicture-202603/$DATASET_FOLDER  | wc -l)
+s3cmd -c $S3CMD_CONFIG ls -r s3://bigpicture-202603/$DATASET_FOLDER > $DATASET_FOLDER.syncedfile.txt
+numSynced=$(cat $DATASET_FOLDER.syncedfile.txt | wc -l)
 
 echo -e "NumFileTotal:\t$numFileTotal"
 echo -e "NumFileInbox:\t$numFileInbox"
