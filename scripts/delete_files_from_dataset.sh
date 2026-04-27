@@ -31,12 +31,6 @@ if [[ -z "$dataset_id" ]] || { [[ "$is_all" = false ]] && [[ -z "$file_id_list_f
     exit 1
 fi
 
-# sanity check for dataset_id format (assuming it should be something like DATASET_1234abc)
-if [[ ! "$dataset_id" =~ ^DATASET_[a-zA-Z0-9]+$ ]]; then
-    echo "Error: dataset_id '$dataset_id' does not match expected format (e.g., DATASET_1234abc)."
-    exit 1
-fi
-
 # Lookup Digital ID (using -tA for clean output)
 digit_dataset_id=$(kubectl -n sda-prod exec svc/postgres-cluster-ro -c postgres -- psql -U postgres -tA -d sda -c "
 SELECT id FROM sda.datasets WHERE stable_id = '$dataset_id'
