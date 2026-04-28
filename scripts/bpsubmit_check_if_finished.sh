@@ -7,6 +7,8 @@
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 binpath="$SCRIPT_DIR" 
 S3CMD_CONFIG="$HOME/.sda/s3cmd-allas.conf"
+S3CMD_CONFIG_PRIVATE="$HOME/.sda/s3cmd-bp-master-private.conf"
+S3CMD_CONFIG_METADATA="$HOME/.sda/s3cmd-bp-master-metadata.conf"
 
 # == pre-requisites ==
 
@@ -66,7 +68,18 @@ cat $DATASET_FOLDER.mapped_stableids.txt | sort -u > /tmp/check_bp_map_1_$suffix
 awk '{print $1}' data/${DATASET_FOLDER}-stableIDs.txt | sort -u > /tmp/check_bp_map_2_$suffix.txt
 
 if ! diff -q /tmp/check_bp_map_1_$suffix.txt /tmp/check_bp_map_2_$suffix.txt  > /dev/null; then
-    echo "stable ids in $DATASET_FOLDER.mapped_stableids.txt and ${DATASET_FOLDER}-stableIDs.txt differ"
+    # show in red color 
+    echo -e "\e[31mstable ids in $DATASET_FOLDER.mapped_stableids.txt and ${DATASET_FOLDER}-stableIDs.txt differ\e[0m"
 fi
 
 rm -f /tmp/check_bp_map_[12]_$suffix.txt
+
+# check private files in the private bucket
+
+user_underscore=$(echo $USER_ID | tr '@' '_')
+echo -e "\nListing private files in the bucket s3://metadata-2024-01"   
+s3cmd -c $S3CMD_CONFIG_PRIVATE ls -r  s3://metadata-2024-01/$user_underscore/$DATASET_ID/$DATASET_FOLDER/ 
+
+# check landing page files if there are any
+echo -e "\nListing landing page files in the bucket s3://public-metadata/datasets/$DATASET_ID/"
+s3cmd -c $S3CMD_CONFIG_METADATA ls -r  s3://public-metadata/datasets/$DATASET_ID/
