@@ -13,7 +13,7 @@ except ImportError:
 # Paths
 TEMPLATE_FILE = '/data3/project-sda/sda-bpctl/config.yaml.example'
 OUTPUT_FILE = 'config.yaml'
-S3_CONF_FILE = '/data3/project-sda/misc/bp-submission/s3cmd-bp-download.conf'
+S3_CONF_FILE = os.path.expanduser('~/.sda/s3cmd-bp-download.conf')
 
 # Hard-coded values
 HARDCODED_MAIL = "bp-notify@nbis.se"
