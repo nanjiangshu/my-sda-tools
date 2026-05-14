@@ -7,8 +7,10 @@
 # detect the platform and use the appropriate base64 command
 if [[ "$OSTYPE" == "darwin"* ]]; then
     base64_cmd="gbase64"
+    date_cmd="gdate"
 else
     base64_cmd="base64"
+    date_cmd="date"
 fi 
 
 usage="Usage: $0 <jwt-token>"
@@ -33,3 +35,11 @@ echo "$header_decoded" | jq .
 echo "Payload:"
 echo "$payload_decoded" | jq .
 
+# Add functionalty to show exp date in human readable format
+exp=$(echo "$payload_decoded" | jq -r '.exp')
+if [ "$exp" != "null" ]; then
+    exp_date=$($date_cmd -d @"$exp" +"%Y-%m-%d %H:%M:%S")
+    echo "Token expires at: $exp_date"
+else
+    echo "No expiration (exp) claim found in the token."
+fi
