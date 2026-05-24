@@ -27,6 +27,10 @@ fi
 kubectl -n fega-staging exec -i svc/fega-staging-sda-postgres-rw -c postgres -- psql -U postgres -d sda << EOF
 BEGIN;
 
+-- Make the foreign key constraint deferrable so we can modify both tables simultaneously
+ALTER TABLE sda.file_event_log
+  ALTER CONSTRAINT file_event_log_file_id_fkey DEFERRABLE INITIALLY DEFERRED;
+
 -- 1. Show the work to be done (Helpful for dry-run verification)
 SELECT f.id AS file_uuid, fel.id AS log_id, fel.file_id AS old_log_file_id, fel.correlation_id AS new_target_id
 FROM sda.file_event_log AS fel
@@ -48,6 +52,10 @@ FROM sda.file_event_log AS fel
 WHERE f.id = fel.id  -- Fixed the logic bug here! Joins on exact Log entry PK
   AND fel.file_id != fel.correlation_id
   AND fel.correlation_id IS NOT NULL;
+
+-- Change the constraint style back to normal before committing/rolling back
+ALTER TABLE sda.file_event_log
+  ALTER CONSTRAINT file_event_log_file_id_fkey NOT DEFERRABLE;
 
 -- Execute final commit or abort safety valve
 $ACTION_COMMAND
