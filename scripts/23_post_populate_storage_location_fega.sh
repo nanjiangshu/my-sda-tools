@@ -116,7 +116,25 @@ WHERE backup_location IS NULL
 pause
 
 echo "=================================================================="
-echo "STEP 3 - BEGIN TRANSACTION"
+echo "PROMPT - SELECTION EXECUTION ACTION FOR STEP 3"
+echo "=================================================================="
+echo "How should the following transaction block execute at completion?"
+echo "  [COMMIT]   - Save updates permanently to production."
+echo "  [DRY-RUN]  - Execute everything normally but ROLLBACK changes at the end."
+echo
+read -rp "Type 'COMMIT' to save live changes, or press ENTER for a safe DRY-RUN: " action_input
+
+if [[ "$action_input" == "COMMIT" ]]; then
+    FINAL_ACTION="COMMIT;"
+    echo ">>> Action Confirmed: Script will run a LIVE COMMIT."
+else
+    FINAL_ACTION="ROLLBACK;"
+    echo ">>> Action Confirmed: Script will run a DRY-RUN (Changes will be discarded)."
+fi
+echo
+
+echo "=================================================================="
+echo "STEP 3 - EXECUTE TRANSACTION"
 echo "=================================================================="
 
 kubectl -n "${NAMESPACE}" exec -i "${DB_POD}" -c "${DB_CONTAINER}" -- \
@@ -175,24 +193,25 @@ SELECT COUNT(*) AS updated_backup_paths
 FROM sda.files
 WHERE backup_path IS NOT NULL;
 
+-- Execute final action choice determined by your prompt selection
+$FINAL_ACTION
+
 EOF
 
 echo
 echo "=================================================================="
-echo "STEP 4 - MANUAL VALIDATION"
+echo "STEP 4 - MANUAL VALIDATION PAUSE"
 echo "=================================================================="
+echo "The main migration transaction block has completed executing."
+echo "Review the log messages printed above to verify accuracy."
 echo
-echo "Open another terminal if needed and manually inspect results."
-echo
-echo "You may now:"
-echo "  COMMIT;"
-echo "or"
-echo "  ROLLBACK;"
-echo
-
 pause
 
 if [[ -n "${BACKUP_LOCATION}" ]]; then
+
+echo "=================================================================="
+echo "STEP 4.5 - POPULATING OPTIONAL BACKUP STORAGE LOCATION"
+echo "=================================================================="
 
 kubectl -n "${NAMESPACE}" exec -i "${DB_POD}" -c "${DB_CONTAINER}" -- \
 psql -v ON_ERROR_STOP=1 -U postgres -d "${DB_NAME}" <<EOF
@@ -208,7 +227,8 @@ SELECT COUNT(*) AS updated_backup_locations
 FROM sda.files
 WHERE backup_location = '${BACKUP_LOCATION}';
 
-COMMIT;
+-- Matches the same execution scope chosen in the main prompt
+$FINAL_ACTION
 
 EOF
 
