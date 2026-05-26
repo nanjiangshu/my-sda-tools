@@ -1,16 +1,69 @@
 #!/bin/bash
 set -euo pipefail
 
-DRY_RUN=false
+# This script migrates data in the sda database where file_id does not match correlation_id in the file_event_log table.
+# It updates the files table and file_event_log table to set file_id to correlation_id where they do not match, and correlation_id is not null.
+# The script also includes pre-checks to show how many rows will be affected in the checksums, file_dataset and file_references tables, and shows the target rows to be fixed before performing the update.
+# The script can be run in dry-run mode where it will execute the SQL commands but roll back at the end, allowing you to see the changes that would be made without actually modifying the data.
 
-for arg in "$@"; do
-    case $arg in
-        --dry-run)
-        DRY_RUN=true
-        shift
-        ;;
+# the target can be FEGA-staging FEGA-prod BP-staging and BP-prod
+# usage: ./migrate_data_where_filesid_not_match_correlation_id.sh -target <target-environment>
+# Example: ./migrate_data_where_filesid_not_match_correlation_id.sh -target fega-staging
+
+DRY_RUN=false
+target=""
+
+usage="Usage: $0 -target <target-environment> [--dry-run]
+Example: $0 -target fega-staging --dry-run"
+if [ "$#" -lt 2 ] ; then
+    echo "$usage"
+    exit 1
+fi
+
+while [[ "$#" -gt 0 ]]; do
+    case $1 in
+        -target) target="$2"; shift ;;
+        --dry-run) DRY_RUN=true ;;
+        -*) echo "Unknown option: $1" ; echo "$usage" ; exit 1 ;;
+        *) echo "Unknown argument: $1" ; echo "$usage" ; exit 1 ;;
     esac
+    shift
 done
+
+case $target in
+    fega-staging)
+        namespace="fega-staging"
+        service="svc/fega-staging-sda-postgres-ro"
+        ;;
+    fega-prod)
+        namespace="fega-prod"
+        service="svc/fega-prod-sda-postgres-ro"
+        ;;
+    bp-staging)
+        namespace="sda-staging"
+        service="svc/cnpg-sda-staging-ro"
+        ;;
+    bp-prod)
+        namespace="sda-prod"
+        service="svc/postgres-cluster-ro"
+        ;;
+    *)
+        echo "Unknown target environment: $target"
+        echo "$usage"
+        exit 1
+esac
+
+# check db version before running the migration, if db versin is > 19, exit, since this migration is only meant to be run on db version 19 or below
+echo "Checking database version for target environment: $target"
+db_version=$(kubectl -n $namespace exec $service -c postgres -- psql -tA -U postgres -d sda -c "
+SELECT version FROM sda.dbschema_version ORDER BY version DESC LIMIT 1;
+")
+echo "Database version: $db_version"
+if [ "$db_version" -gt 19 ]; then
+    echo "Database version is greater than 19. Migration cannot proceed."
+    exit 1
+fi
+
 
 if [ "$DRY_RUN" = true ]; then
     echo "========= DRY RUN MODE ========="
@@ -22,7 +75,7 @@ else
     ACTION_COMMAND="COMMIT;"
 fi
 
-kubectl -n fega-staging exec -i svc/fega-staging-sda-postgres-rw -c postgres -- \
+kubectl -n $namespace exec -i $service -c postgres -- \
 psql -v ON_ERROR_STOP=1 -U postgres -d sda << EOF
 
 BEGIN;
