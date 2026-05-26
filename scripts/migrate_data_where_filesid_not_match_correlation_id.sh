@@ -1,12 +1,18 @@
 #!/bin/bash
 set -euo pipefail
 
-# This script migrates data in the sda database where file_id does not match correlation_id in the file_event_log table.
-# It updates the files table and file_event_log table to set file_id to correlation_id where they do not match, and correlation_id is not null.
-# The script also includes pre-checks to show how many rows will be affected in the checksums, file_dataset and file_references tables, and shows the target rows to be fixed before performing the update.
-# The script can be run in dry-run mode where it will execute the SQL commands but roll back at the end, allowing you to see the changes that would be made without actually modifying the data.
+# This script migrates data in the sda database where file_id does not match
+# correlation_id in the file_event_log table.  It updates the files table and
+# file_event_log table to set file_id to correlation_id where they do not match,
+# and correlation_id is not null.  
+# The script also includes pre-checks to show
+# how many rows will be affected in the checksums, file_dataset and
+# file_references tables, and shows the target rows to be fixed before
+# performing the update.  The script can be run in dry-run mode where it will
+# execute the SQL commands but roll back at the end, allowing you to see the
+# changes that would be made without actually modifying the data.
 
-# the target can be FEGA-staging FEGA-prod BP-staging and BP-prod
+# The target can be FEGA-staging FEGA-prod BP-staging and BP-prod
 # usage: ./migrate_data_where_filesid_not_match_correlation_id.sh -target <target-environment>
 # Example: ./migrate_data_where_filesid_not_match_correlation_id.sh -target fega-staging
 
