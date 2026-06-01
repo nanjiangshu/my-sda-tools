@@ -2,6 +2,7 @@
 
 # This script queries the file_event_log table in the sda database for a given file ID.
 target="bp-prod"
+file_id=""
 
 usage="Usage: $0 [-target <target>] <file_id>
 OPTIONS:
@@ -9,15 +10,26 @@ OPTIONS:
                         fega-staging, fega-prod, bp-staging, bp-prod
 "
 
-# Parse command line arguments
+# Parse command line arguments, it should report error if more than one positional argument is provided, and the order of the arguments should not matter
 while [[ $# -gt 0 ]]; do
     case $1 in
         -target)
             target="$2"
             shift 2
             ;;
+        -*)
+            echo "Unknown option: $1"
+            echo "$usage"
+            exit 1
+            ;;
         *)
-            file_id="$1"
+            if [ -z "${file_id:-}" ]; then
+                file_id="$1"
+            else
+                echo "Unexpected argument: $1"
+                echo "$usage"
+                exit 1
+            fi
             shift
             ;;
     esac
