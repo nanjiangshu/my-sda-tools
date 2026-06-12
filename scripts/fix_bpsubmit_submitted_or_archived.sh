@@ -1,7 +1,24 @@
 #!/bin/bash
 set -euo pipefail
 
-# Fix files stuck in submitted and archived status
+# Description: This script fixes files stuck in submitted and archived status
+usage="Usage: $0 -u <user_id> -d <dataset_folder>"
+
+USER_ID=""
+DATASET_FOLDER=""
+
+while getopts "u:d:" opt; do
+    case $opt in
+        u) USER_ID="$OPTARG" ;;
+        d) DATASET_FOLDER="$OPTARG" ;;
+        *) echo "$usage"; exit 1 ;;
+    esac
+done
+
+if [ -z "${USER_ID:-}" ] || [ -z "${DATASET_FOLDER:-}" ]; then
+    echo "$usage"
+    exit 1
+fi
 
 query_userfiles.sh $USER_ID $DATASET_FOLDER > $DATASET_FOLDER.userfiles.txt
 grep -iv "private" "$DATASET_FOLDER.userfiles.txt" | awk -F'|' '$4 ~ /^(submitted|archived)$/ { print $1 }' > t1.submitted_or_archived.fileidlist.txt

@@ -36,10 +36,10 @@ fi
 
 
 if [ "$check_disabled" = true ]; then
-  kubectl -n sda-prod exec svc/postgres-cluster-ro -c postgres -- psql -U postgres -tA -d sda -c "
+  kubectl -n sda-prod exec svc/postgres-cluster-rw -c postgres -- psql -U postgres -tA -d sda -c "
   SELECT f.stable_id, f.submission_file_path 
   FROM sda.files f
-  WHERE f.submission_file_path LIKE '%$dataset_folder/%'
+  WHERE f.submission_file_path LIKE '$dataset_folder/%'
     AND f.stable_id IS NOT NULL
   AND f.submission_file_path IS NOT NULL
   AND (
@@ -51,9 +51,9 @@ if [ "$check_disabled" = true ]; then
   ) IS DISTINCT FROM 'disabled';
 " | awk 'NF' | sort -u | tr '|' '\t'
 else
-  kubectl -n sda-prod exec svc/postgres-cluster-ro -c postgres -- psql -U postgres -tA -d sda -c "
+  kubectl -n sda-prod exec svc/postgres-cluster-rw -c postgres -- psql -U postgres -tA -d sda -c "
   SELECT stable_id, submission_file_path FROM sda.files
-  WHERE submission_file_path LIKE '%$dataset_folder/%'
+  WHERE submission_file_path LIKE '$dataset_folder/%'
   AND stable_id IS NOT NULL
   AND submission_file_path IS NOT NULL
   " | awk 'NF' | sort -u |  tr '|' '\t'
