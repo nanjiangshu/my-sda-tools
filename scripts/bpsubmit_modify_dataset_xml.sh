@@ -17,7 +17,7 @@ Options:
 "
 
 S3CMD_INBOX_CONFIG="$HOME/.sda/s3cmd-bp-master-inbox.conf"
-INBOX_BUCKET="inbox-2024-01"
+INBOX_BUCKET="inbox"
 
 
 # argument parsing
