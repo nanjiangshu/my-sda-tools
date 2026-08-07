@@ -93,7 +93,7 @@ fi
 
 # Update inbox file list
 inbox_file="/data3/project-sda/misc/bp-submission/inbox-all.s3.txt"
-s3cmd -c /data3/project-sda/misc/bp-submission/s3cmd-bp-master-inbox.conf ls -r  s3://inbox-2024-01 > $inbox_file
+s3cmd -c $HOME/.sda/s3cmd-bp-master-inbox.conf ls -r  s3://inbox > $inbox_file
 
 for dataset_folder in "${dataset_folder_list[@]}"; do
     [[ -z "$dataset_folder" ]] && continue

@@ -81,7 +81,7 @@ if [ ! -f "$s3cmdFile" ]; then
 fi
 
 if [ "$server" == "prod" ]; then
-    bucket="inbox-2024-01"
+    bucket="inbox"
 elif [ "$server" == "staging" ]; then
     bucket="staging-inbox"
 else
