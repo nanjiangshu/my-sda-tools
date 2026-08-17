@@ -4,47 +4,42 @@
 set -euo pipefail
 
 SCRIPT_DIR=$(dirname "$0")
-binpath=$(realpath -- "$SCRIPT_DIR") # Added -- for robustness
+binpath=$(realpath -- "$SCRIPT_DIR")
 
-usage="""
-Usage: $0 [--overwrite] -u <user> -d <dataset_folder> -o <outdir>
--u <user>           : the LSAAI user ID
--d <dataset_folder> : the dataset folder name
--o <outdir>         : directory to save intermediate and final results
--b <batch_size>    : (optional) number of file IDs to process per batch (default: 500)
---overwrite         : (optional) overwrite existing files in the output directory except for the final status list file
-"""
+usage="Usage: $0 [--overwrite] -u <user> -d <dataset_folder> -o <outdir> [-b <batch_size>] [--verbose]"
 
-user=
-dataset_folder=
-outdir=
+user=""
+dataset_folder=""
+outdir=""
 overwrite=false
+verbose=false
 batch_size=500
+
 while [[ $# -gt 0 ]]; do
     key="$1"
     case $key in
         -u)
-            user="$2"
-            shift
-            shift
+            user="${2:-}"
+            shift 2
             ;;
         -d)
-            dataset_folder="$2"
-            shift
-            shift
+            dataset_folder="${2:-}"
+            shift 2
             ;;
         -o)
-            outdir="$2"
-            shift
-            shift
+            outdir="${2:-}"
+            shift 2
             ;;
         -b)
-            batch_size="$2"
-            shift
-            shift
+            batch_size="${2:-}"
+            shift 2
             ;;
         --overwrite)
             overwrite=true
+            shift
+            ;;
+        --verbose)
+            verbose=true
             shift
             ;;
         *)
@@ -55,32 +50,51 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-if [ -z "$user" ] || [ -z "$dataset_folder" ] || [ -z "$outdir" ]; then
+if [[ -z "$user" || -z "$dataset_folder" || -z "$outdir" ]]; then
     echo "Error: Missing required arguments."
     echo "$usage"
     exit 1
 fi
 
-if [ ! -d "$outdir" ]; then
-    mkdir -p "$outdir"
-fi
+mkdir -p "$outdir"
 
-if [[ "$overwrite" == "false" || ! -f "$outdir/$dataset_folder.userfiles.txt" ]]; then
+# Query user files (Runs if --overwrite is set OR output file missing)
+if [[ "$overwrite" == "true" || ! -f "$outdir/$dataset_folder.userfiles.txt" ]]; then
+    if [[ "$verbose" == "true" ]]; then
+        cat << EOF
+"$binpath/query_userfiles.sh" "$user" "$dataset_folder" > "$outdir/$dataset_folder.userfiles.txt"
+EOF
+    fi
     bash "$binpath/query_userfiles.sh" "$user" "$dataset_folder" > "$outdir/$dataset_folder.userfiles.txt"
 fi
 
-if [ ! -s "$outdir/$dataset_folder.userfiles.txt" ]; then
+if [[ ! -s "$outdir/$dataset_folder.userfiles.txt" ]]; then
     echo "No user files found for user: $user in dataset folder: $dataset_folder"
     exit 1
 fi
 
-# Variables quoted, clearer awk -F
-if [[ "$overwrite" == "false" || ! -f "$outdir/$dataset_folder.fileidlist.txt" ]]; then
+# Extract file IDs
+if [[ "$overwrite" == "true" || ! -f "$outdir/$dataset_folder.fileidlist.txt" ]]; then
+    if [[ "$verbose" == "true" ]]; then
+        cat << EOF
+awk -F'|' '{print \$1}' "$outdir/$dataset_folder.userfiles.txt" | sort -u > "$outdir/$dataset_folder.fileidlist.txt"
+EOF
+    fi
     awk -F'|' '{print $1}' "$outdir/$dataset_folder.userfiles.txt" | sort -u > "$outdir/$dataset_folder.fileidlist.txt"
 fi
 
-# Variables quoted
-bash "$binpath/query_status_in_fileeventlog_with_fileidlist.sh" "$outdir/$dataset_folder.fileidlist.txt" $batch_size > "$outdir/$dataset_folder.status.list.txt"
+# Query file event logs
+if [[ "$verbose" == "true" ]]; then
+    cat << EOF
+"$binpath/query_status_in_fileeventlog_with_fileidlist.sh" "$outdir/$dataset_folder.fileidlist.txt" $batch_size > "$outdir/$dataset_folder.status.list.txt"
+EOF
+fi
+bash "$binpath/query_status_in_fileeventlog_with_fileidlist.sh" "$outdir/$dataset_folder.fileidlist.txt" "$batch_size" > "$outdir/$dataset_folder.status.list.txt"
 
-# Variables quoted, clearer awk -F
+# Output summary statistics
+if [[ "$verbose" == "true" ]]; then
+    cat << EOF
+awk -F'|' '{print \$2}' "$outdir/$dataset_folder.status.list.txt" | awk -F, '{print \$1}' | sort | uniq -c
+EOF
+fi
 awk -F'|' '{print $2}' "$outdir/$dataset_folder.status.list.txt" | awk -F, '{print $1}' | sort | uniq -c
