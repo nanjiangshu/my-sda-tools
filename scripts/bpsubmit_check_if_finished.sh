@@ -5,8 +5,8 @@
 # mapped files are synced to the s3 bucket.
 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-binpath="$SCRIPT_DIR" 
-S3CMD_CONFIG="$HOME/.sda/s3cmd-allas.conf"
+binpath="$SCRIPT_DIR"
+S3CMD_CONFIG_SYNC="$HOME/.sda/s3cmd-bp-master-archive-s3a3_for_sync.conf"
 S3CMD_CONFIG_PRIVATE="$HOME/.sda/s3cmd-bp-master-private.conf"
 S3CMD_CONFIG_METADATA="$HOME/.sda/s3cmd-bp-master-metadata.conf"
 
@@ -24,8 +24,8 @@ if [[ -z "$DATASET_ID" || -z "$USER_ID" || -z "$DATASET_FOLDER" ]]; then
 fi
 
 # check if s3cmd config file exists
-if [[ ! -f "$S3CMD_CONFIG" ]]; then
-    echo "Error: s3cmd config file not found at $S3CMD_CONFIG"
+if [[ ! -f "$S3CMD_CONFIG_SYNC" ]]; then
+    echo "Error: s3cmd config file not found at $S3CMD_CONFIG_SYNC"
     exit 1
 fi
 
@@ -39,13 +39,13 @@ bash $binpath/get_file_stableids_from_datasetid.sh $DATASET_ID > $DATASET_FOLDER
 
 mkdir -p data
 if [ ! -s data/${DATASET_FOLDER}-stableIDs.txt ] ; then
-    bash $binpath/get_stableid_filepath_list.sh $DATASET_FOLDER > data/${DATASET_FOLDER}-stableIDs.txt  
+    bash $binpath/get_stableid_filepath_list.sh $DATASET_FOLDER > data/${DATASET_FOLDER}-stableIDs.txt
 fi
 
 numFileTotal=$(cat data/${DATASET_FOLDER}-stableIDs.txt | wc -l)
 
 
-if [ ! -f "$DATASET_FOLDER.filelist.txt" ];then 
+if [ ! -f "$DATASET_FOLDER.filelist.txt" ];then
     user_underscore=$(echo $USER_ID | tr '@' '_')
     bash $binpath/get_filelist_for_datasetfolder.sh -u $user_underscore $DATASET_FOLDER
 fi
@@ -54,7 +54,7 @@ numFileInbox=$(cat $DATASET_FOLDER.filelist.txt | wc -l)
 numMapped=$(cat $DATASET_FOLDER.mapped_stableids.txt | wc -l)
 
 # check if all files are synced
-s3cmd -c $S3CMD_CONFIG ls -r s3://bigpicture-202603/$DATASET_FOLDER > $DATASET_FOLDER.syncedfile.txt
+s3cmd -c $S3CMD_CONFIG_SYNC ls -r s3://csc-sync-replacement.1/$DATASET_FOLDER > $DATASET_FOLDER.syncedfile.txt
 numSynced=$(cat $DATASET_FOLDER.syncedfile.txt | wc -l)
 
 echo -e "NumFileTotal:\t$numFileTotal"
@@ -68,7 +68,7 @@ cat $DATASET_FOLDER.mapped_stableids.txt | sort -u > /tmp/check_bp_map_1_$suffix
 awk '{print $1}' data/${DATASET_FOLDER}-stableIDs.txt | sort -u > /tmp/check_bp_map_2_$suffix.txt
 
 if ! diff -q /tmp/check_bp_map_1_$suffix.txt /tmp/check_bp_map_2_$suffix.txt  > /dev/null; then
-    # show in red color 
+    # show in red color
     echo -e "\e[31mstable ids in $DATASET_FOLDER.mapped_stableids.txt and ${DATASET_FOLDER}-stableIDs.txt differ\e[0m"
 fi
 
@@ -77,8 +77,8 @@ rm -f /tmp/check_bp_map_[12]_$suffix.txt
 # check private files in the private bucket
 
 user_underscore=$(echo $USER_ID | tr '@' '_')
-echo -e "\nListing private files in the bucket s3://metadata-2024-01"   
-s3cmd -c $S3CMD_CONFIG_PRIVATE ls -r  s3://metadata-2024-01/$user_underscore/$DATASET_ID/$DATASET_FOLDER/ 
+echo -e "\nListing private files in the bucket s3://metadata-2024-01"
+s3cmd -c $S3CMD_CONFIG_PRIVATE ls -r  s3://metadata-2024-01/$user_underscore/$DATASET_ID/$DATASET_FOLDER/
 
 # check landing page files if there are any
 echo -e "\nListing landing page files in the bucket s3://public-metadata/datasets/$DATASET_ID/"
