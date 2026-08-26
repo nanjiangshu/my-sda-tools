@@ -28,13 +28,12 @@ stableids=()
 while [[ "$#" -gt 0 ]]; do
     case $1 in
         -target) target="$2"; shift ;;
-        -*) echo "Unknown option: $1" ; echo "$usage" ; exit 1 ;;
         -l) stableid_file_list="$2"; shift ;;
+        -*) echo "Unknown option: $1" ; echo "$usage" ; exit 1 ;;
         *) stableids+=("$1") ;;
     esac
     shift
 done
-
 case $target in
     fega-staging)
         namespace="fega-staging"
