@@ -74,7 +74,12 @@ fi
 
 # echo "Number of stableids to process: $number_of_stableids"
 
+# 1. Read file lines into a formatted single-quoted, comma-separated string
+#    Example output: 'id1','id2','id3'
+formatted_ids=$(printf "'%s'," "${stableids[@]}")
+formatted_ids=${formatted_ids%,}
 
+# 2. Execute psql safely
 kubectl -n "$namespace" exec "$service" -c postgres -- \
 psql -U postgres -t -d sda -c \
-"SELECT id FROM sda.files WHERE stable_id IN ('$(IFS="','"; echo "${stableids[*]}")')" | awk 'NF' | sort -u | sed 's/^[[:space:]]\+//;s/[[:space:]]\+$//'
+"SELECT id FROM sda.files WHERE stable_id IN ($formatted_ids);" | awk 'NF' | sort -u | sed 's/^[[:space:]]\+//;s/[[:space:]]\+$//'
