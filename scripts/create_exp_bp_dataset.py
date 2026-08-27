@@ -1,12 +1,21 @@
 #!/usr/bin/env python3
 import os
 import random
+import hashlib
 import pydicom
 import numpy as np
 from PIL import Image
 from pydicom.dataset import Dataset, FileDataset
+from pydicom.uid import ExplicitVRLittleEndian, generate_uid
 import json
 import argparse
+
+def calculate_sha256(filepath):
+    sha256 = hashlib.sha256()
+    with open(filepath, "rb") as f:
+        for chunk in iter(lambda: f.read(4096), b""):
+            sha256.update(chunk)
+    return sha256.hexdigest()
 
 def create_folders(base_path, identifier):
     dataset_path = os.path.join(base_path, f"DATASET_{identifier}")
@@ -22,7 +31,58 @@ def create_folders(base_path, identifier):
         os.makedirs(os.path.join(dataset_path, folder), exist_ok=True)
     return dataset_path
 
-def create_xml_files(metadata_path, identifier):
+def create_dicom_image(images_dir, image_id, image_size_mb):
+    file_info = []
+    for i in range(2):
+        subfolder_rel = f"IMAGE_{image_id}_{i}"
+        subfolder_abs = os.path.join(images_dir, subfolder_rel)
+        os.makedirs(subfolder_abs, exist_ok=True)
+
+        image_size = (512, 512)
+        num_slices = max(1, int((image_size_mb * 1024 * 1024) / (512 * 512)))
+        pixel_array = np.random.randint(0, 256, size=image_size, dtype=np.uint8)
+
+        for j in range(num_slices):
+            file_meta = Dataset()
+            file_meta.MediaStorageSOPClassUID = "1.2.840.10008.5.1.4.1.1.7"
+            file_meta.MediaStorageSOPInstanceUID = generate_uid()
+            file_meta.TransferSyntaxUID = ExplicitVRLittleEndian
+
+            slice_filename = f"slice_{j}.dcm"
+            dcm_file = os.path.join(subfolder_abs, slice_filename)
+            ds = FileDataset(dcm_file, {}, file_meta=file_meta, preamble=b"\0" * 128)
+            ds.is_little_endian = True
+            ds.is_implicit_VR = False
+
+            ds.PatientName = "Test^Patient"
+            ds.PatientID = "12345"
+            ds.Modality = "OT"
+            ds.Rows, ds.Columns = image_size
+            ds.PhotometricInterpretation = "MONOCHROME2"
+            ds.SamplesPerPixel = 1
+            ds.BitsAllocated = 8
+            ds.BitsStored = 8
+            ds.HighBit = 7
+            ds.PixelRepresentation = 0
+            ds.PixelData = pixel_array.tobytes()
+
+            ds.SOPClassUID = file_meta.MediaStorageSOPClassUID
+            ds.SOPInstanceUID = file_meta.MediaStorageSOPInstanceUID
+
+            ds.save_as(dcm_file, write_like_original=False)
+
+            checksum = calculate_sha256(dcm_file)
+            # Standardize filename format for XML (IMAGES/folder/file.dcm)
+            xml_path = f"IMAGES/{subfolder_rel}/{slice_filename}"
+            file_info.append({
+                "alias": f"image_{i+1}",
+                "filename": xml_path,
+                "checksum": checksum
+            })
+
+    return file_info
+
+def create_xml_files(metadata_path, identifier, dicom_files):
     # dataset.xml
     dataset_xml = f"""<?xml version="1.0" encoding="UTF-8"?>
 <DATASET_SET xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
@@ -137,19 +197,31 @@ def create_xml_files(metadata_path, identifier):
     with open(os.path.join(metadata_path, "sample.xml"), "w") as f:
         f.write(sample_xml)
 
-    # image.xml
-    image_xml = f"""<?xml version="1.0" encoding="UTF-8"?>
-<IMAGE_SET xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
-    <IMAGE alias="image_1">
-        <IMAGE_OF alias="being_1" />
+    # Dynamically generated image.xml to match exact DICOM files and hashes
+    image_entries = []
+    for info in dicom_files:
+        image_entries.append(f"""    <IMAGE alias="{info['alias']}">
+        <IMAGE_OF alias="being_1"/>
         <IMAGE_TYPE>
-            <WSI_IMAGE />
+            <WSI_IMAGE>test</WSI_IMAGE>
         </IMAGE_TYPE>
         <FILES>
-            <FILE filename="IMAGE_{identifier}_0/slice_0.dcm" checksum_method="SHA256" checksum="0000000000000000000000000000000000000000000000000000000000000000" filetype="dcm" />
+            <FILE filename="{info['filename']}" checksum_method="SHA256"
+                  checksum="{info['checksum']}"
+                  unencrypted_checksum="{info['checksum']}"
+                  filetype="dcm"/>
         </FILES>
-        <ATTRIBUTES xsi:nil="true" />
-    </IMAGE>
+        <ATTRIBUTES>
+            <STRING_ATTRIBUTE>
+                <TAG>test</TAG>
+                <VALUE>test</VALUE>
+            </STRING_ATTRIBUTE>
+        </ATTRIBUTES>
+    </IMAGE>""")
+
+    image_xml = f"""<?xml version="1.0" encoding="UTF-8"?>
+<IMAGE_SET xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+{os.linesep.join(image_entries)}
 </IMAGE_SET>
 """
     with open(os.path.join(metadata_path, "image.xml"), "w") as f:
@@ -239,26 +311,6 @@ def create_geojson(annotations_path):
     with open(os.path.join(annotations_path, "annotation.geojson"), "w") as f:
         json.dump(geojson_data, f, indent=4)
 
-def create_dicom_image(image_path, image_id, image_size_mb):
-    for i in range(2):
-        filename = os.path.join(image_path, f"IMAGE_{image_id}_{i}")
-        os.makedirs(filename, exist_ok=True)
-
-        image_size = (512, 512)
-        num_slices = max(1, int((image_size_mb * 1024 * 1024) / (512 * 512)))
-        pixel_array = np.random.randint(0, 256, size=image_size, dtype=np.uint8)
-
-        for j in range(num_slices):
-            ds = Dataset()
-            ds.PatientName = "Test^Patient"
-            ds.Rows, ds.Columns = image_size
-            ds.PhotometricInterpretation = "MONOCHROME2"
-            ds.PixelData = pixel_array.tobytes()
-
-            dcm_file = os.path.join(filename, f"slice_{j}.dcm")
-            file_ds = FileDataset(dcm_file, ds, preamble=b"\0" * 128)
-            file_ds.save_as(dcm_file)
-
 def create_landing_page(landing_page_path, identifier):
     landing_page_xml = f"""<?xml version="1.0" encoding="UTF-8"?>
 <LANDING_PAGE_SET xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
@@ -294,7 +346,6 @@ def create_private_files(private_path, identifier):
     with open(os.path.join(private_path, "organisation.xml"), "w") as f:
         f.write(org_xml)
 
-    # Valid rems.xml structure aligned with your example
     rems_xml = f"""<?xml version="1.0" encoding="UTF-8"?>
 <REMS_SET xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
     <REMS alias="rems_1">
@@ -319,9 +370,9 @@ def create_private_files(private_path, identifier):
 def create_dataset(base_path, identifier, image_size_mb):
     dataset_path = create_folders(base_path, identifier)
 
-    create_xml_files(os.path.join(dataset_path, "METADATA"), identifier)
+    dicom_files = create_dicom_image(os.path.join(dataset_path, "IMAGES"), identifier, image_size_mb)
+    create_xml_files(os.path.join(dataset_path, "METADATA"), identifier, dicom_files)
     create_geojson(os.path.join(dataset_path, "ANNOTATIONS"))
-    create_dicom_image(os.path.join(dataset_path, "IMAGES"), identifier, image_size_mb)
     create_landing_page(os.path.join(dataset_path, "LANDING_PAGE"), identifier)
     create_private_files(os.path.join(dataset_path, "PRIVATE"), identifier)
 
