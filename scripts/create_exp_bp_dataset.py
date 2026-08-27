@@ -32,11 +32,11 @@ def create_folders(base_path, identifier):
     return dataset_path
 
 def create_dicom_image(images_dir, image_id, image_size_mb):
-    file_info = []
-    global_image_counter = 1
+    images_data = []
 
-    for i in range(2):
-        subfolder_rel = f"IMAGE_{image_id}_{i}"
+    for i in range(1, 3):
+        image_alias = str(i)
+        subfolder_rel = f"IMAGE_{image_alias}"
         subfolder_abs = os.path.join(images_dir, subfolder_rel)
         os.makedirs(subfolder_abs, exist_ok=True)
 
@@ -44,6 +44,7 @@ def create_dicom_image(images_dir, image_id, image_size_mb):
         num_slices = max(1, int((image_size_mb * 1024 * 1024) / (512 * 512)))
         pixel_array = np.random.randint(0, 256, size=image_size, dtype=np.uint8)
 
+        files = []
         for j in range(num_slices):
             file_meta = Dataset()
             file_meta.MediaStorageSOPClassUID = "1.2.840.10008.5.1.4.1.1.7"
@@ -75,15 +76,17 @@ def create_dicom_image(images_dir, image_id, image_size_mb):
 
             checksum = calculate_sha256(dcm_file)
             xml_path = f"IMAGES/{subfolder_rel}/{slice_filename}"
-
-            file_info.append({
-                "alias": f"image_{global_image_counter}",
+            files.append({
                 "filename": xml_path,
                 "checksum": checksum
             })
-            global_image_counter += 1
 
-    return file_info
+        images_data.append({
+            "alias": image_alias,
+            "files": files
+        })
+
+    return images_data
 
 def create_geojson(annotations_path):
     geojson_data = {
@@ -107,7 +110,7 @@ def create_geojson(annotations_path):
         "checksum": checksum
     }
 
-def create_xml_files(metadata_path, identifier, dicom_files, annotation_info):
+def create_xml_files(metadata_path, identifier, images_data, annotation_info):
     # dataset.xml
     dataset_xml = f"""<?xml version="1.0" encoding="UTF-8"?>
 <DATASET_SET xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
@@ -267,17 +270,22 @@ def create_xml_files(metadata_path, identifier, dicom_files, annotation_info):
 
     # image.xml
     image_entries = []
-    for info in dicom_files:
-        image_entries.append(f"""    <IMAGE alias="{info['alias']}">
+    for img in images_data:
+        file_nodes = []
+        for file in img["files"]:
+            file_nodes.append(
+                f'            <FILE filename="{file["filename"]}" checksum_method="SHA256" '
+                f'checksum="{file["checksum"]}" unencrypted_checksum="{file["checksum"]}" filetype="dcm"/>'
+            )
+        files_xml = os.linesep.join(file_nodes)
+
+        image_entries.append(f"""    <IMAGE alias="{img['alias']}">
         <IMAGE_OF alias="1"/>
         <IMAGE_TYPE>
             <WSI_IMAGE>test</WSI_IMAGE>
         </IMAGE_TYPE>
         <FILES>
-            <FILE filename="{info['filename']}" checksum_method="SHA256"
-                  checksum="{info['checksum']}"
-                  unencrypted_checksum="{info['checksum']}"
-                  filetype="dcm"/>
+{files_xml}
         </FILES>
         <ATTRIBUTES>
             <STRING_ATTRIBUTE>
@@ -299,7 +307,7 @@ def create_xml_files(metadata_path, identifier, dicom_files, annotation_info):
     annotation_xml = f"""<?xml version="1.0" encoding="UTF-8"?>
 <ANNOTATION_SET xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
     <ANNOTATION alias="1">
-        <IMAGE_REF alias="image_1"/>
+        <IMAGE_REF alias="1"/>
         <FILES>
             <FILE filename="{annotation_info['filename']}" checksum_method="SHA256" checksum="{annotation_info['checksum']}" filetype="json"/>
         </FILES>
@@ -564,10 +572,10 @@ def create_private_files(private_path, identifier):
 def create_dataset(base_path, identifier, image_size_mb):
     dataset_path = create_folders(base_path, identifier)
 
-    dicom_files = create_dicom_image(os.path.join(dataset_path, "IMAGES"), identifier, image_size_mb)
+    images_data = create_dicom_image(os.path.join(dataset_path, "IMAGES"), identifier, image_size_mb)
     annotation_info = create_geojson(os.path.join(dataset_path, "ANNOTATIONS"))
 
-    create_xml_files(os.path.join(dataset_path, "METADATA"), identifier, dicom_files, annotation_info)
+    create_xml_files(os.path.join(dataset_path, "METADATA"), identifier, images_data, annotation_info)
     create_landing_page(os.path.join(dataset_path, "LANDING_PAGE"), identifier)
     create_private_files(os.path.join(dataset_path, "PRIVATE"), identifier)
 
