@@ -215,9 +215,9 @@ def create_xml_files(metadata_path, identifier, images_data, annotation_info):
         f.write(policy_xml)
 
     # sample.xml
-    sample_xml = """<?xml version="1.0" encoding="UTF-8"?>
+    sample_xml = f"""<?xml version="1.0" encoding="UTF-8"?>
 <SAMPLE_SET xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
-    <BIOLOGICAL_BEING alias="1">
+    <BIOLOGICAL_BEING alias="being_{identifier}">
         <ATTRIBUTES>
             <STRING_ATTRIBUTE>
                 <TAG>test</TAG>
@@ -225,8 +225,8 @@ def create_xml_files(metadata_path, identifier, images_data, annotation_info):
             </STRING_ATTRIBUTE>
         </ATTRIBUTES>
     </BIOLOGICAL_BEING>
-    <CASE alias="1">
-        <BIOLOGICAL_BEING_REF alias="1"/>
+    <CASE alias="case_{identifier}">
+        <BIOLOGICAL_BEING_REF alias="being_{identifier}"/>
         <ATTRIBUTES>
             <STRING_ATTRIBUTE>
                 <TAG>test</TAG>
@@ -234,9 +234,9 @@ def create_xml_files(metadata_path, identifier, images_data, annotation_info):
             </STRING_ATTRIBUTE>
         </ATTRIBUTES>
     </CASE>
-    <SPECIMEN alias="1">
-        <EXTRACTED_FROM_REF alias="1"/>
-        <PART_OF_CASE_REF alias="1"/>
+    <SPECIMEN alias="specimen_{identifier}">
+        <EXTRACTED_FROM_REF alias="being_{identifier}"/>
+        <PART_OF_CASE_REF alias="case_{identifier}"/>
         <ATTRIBUTES>
             <STRING_ATTRIBUTE>
                 <TAG>test</TAG>
@@ -244,8 +244,8 @@ def create_xml_files(metadata_path, identifier, images_data, annotation_info):
             </STRING_ATTRIBUTE>
         </ATTRIBUTES>
     </SPECIMEN>
-    <BLOCK alias="1">
-        <SAMPLED_FROM_REF alias="1"/>
+    <BLOCK alias="block_{identifier}">
+        <SAMPLED_FROM_REF alias="specimen_{identifier}"/>
         <ATTRIBUTES>
             <STRING_ATTRIBUTE>
                 <TAG>test</TAG>
@@ -253,9 +253,9 @@ def create_xml_files(metadata_path, identifier, images_data, annotation_info):
             </STRING_ATTRIBUTE>
         </ATTRIBUTES>
     </BLOCK>
-    <SLIDE alias="1">
-        <CREATED_FROM_REF alias="1"/>
-        <STAINING_INFORMATION_REF alias="staining_1"/>
+    <SLIDE alias="slide_{identifier}">
+        <CREATED_FROM_REF alias="block_{identifier}"/>
+        <STAINING_INFORMATION_REF alias="staining_{identifier}"/>
         <ATTRIBUTES>
             <STRING_ATTRIBUTE>
                 <TAG>test</TAG>
@@ -280,7 +280,7 @@ def create_xml_files(metadata_path, identifier, images_data, annotation_info):
         files_xml = os.linesep.join(file_nodes)
 
         image_entries.append(f"""    <IMAGE alias="{img['alias']}">
-        <IMAGE_OF alias="1"/>
+        <IMAGE_OF alias="slide_{identifier}"/>
         <IMAGE_TYPE>
             <WSI_IMAGE>test</WSI_IMAGE>
         </IMAGE_TYPE>
@@ -306,7 +306,7 @@ def create_xml_files(metadata_path, identifier, images_data, annotation_info):
     # annotation.xml
     annotation_xml = f"""<?xml version="1.0" encoding="UTF-8"?>
 <ANNOTATION_SET xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
-    <ANNOTATION alias="1">
+    <ANNOTATION alias="annotation_{identifier}">
         <IMAGE_REF alias="1"/>
         <FILES>
             <FILE filename="{annotation_info['filename']}" checksum_method="SHA256" checksum="{annotation_info['checksum']}" filetype="json"/>
@@ -324,9 +324,9 @@ def create_xml_files(metadata_path, identifier, images_data, annotation_info):
         f.write(annotation_xml)
 
     # observer.xml
-    observer_xml = """<?xml version="1.0" encoding="UTF-8"?>
+    observer_xml = f"""<?xml version="1.0" encoding="UTF-8"?>
 <OBSERVER_SET xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
-    <OBSERVER alias="1">
+    <OBSERVER alias="observer_{identifier}">
         <OBSERVER_TYPE>Human</OBSERVER_TYPE>
         <ATTRIBUTES>
             <STRING_ATTRIBUTE>
@@ -341,11 +341,11 @@ def create_xml_files(metadata_path, identifier, images_data, annotation_info):
         f.write(observer_xml)
 
     # observation.xml
-    observation_xml = """<?xml version="1.0" encoding="UTF-8"?>
+    observation_xml = f"""<?xml version="1.0" encoding="UTF-8"?>
 <OBSERVATION_SET xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
-    <OBSERVATION alias="1">
-        <ANNOTATION_REF alias="1"/>
-        <OBSERVER_REF alias="1"/>
+    <OBSERVATION alias="observation_{identifier}">
+        <ANNOTATION_REF alias="annotation_{identifier}"/>
+        <OBSERVER_REF alias="observer_{identifier}"/>
         <STATEMENT>
             <STATEMENT_TYPE>Diagnosis</STATEMENT_TYPE>
             <STATEMENT_STATUS>Summary</STATEMENT_STATUS>
@@ -384,7 +384,7 @@ def create_xml_files(metadata_path, identifier, images_data, annotation_info):
     # staining.xml
     staining_xml = f"""<?xml version="1.0" encoding="utf-8"?>
 <STAINING_SET xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
-    <STAINING alias="staining_1">
+    <STAINING alias="staining_{identifier}">
         <PROCEDURE_INFORMATION>
             <STRING_ATTRIBUTE>
                 <TAG>test</TAG>
@@ -433,7 +433,7 @@ def create_landing_page(landing_page_path, identifier):
 def create_private_files(private_path, identifier):
     org_xml = f"""<?xml version="1.0" encoding="UTF-8"?>
 <ORGANISATION_SET xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
-    <ORGANISATION alias="org_1">
+    <ORGANISATION alias="org_{identifier}">
         <NAME>Test Organization</NAME>
         <PIC_CODE>123456789</PIC_CODE>
         <DATAMANAGER_PERUN_GROUP>perun_group_dummy</DATAMANAGER_PERUN_GROUP>
@@ -447,7 +447,7 @@ def create_private_files(private_path, identifier):
 
     rems_xml = f"""<?xml version="1.0" encoding="UTF-8"?>
 <REMS_SET xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
-    <REMS alias="rems_1">
+    <REMS alias="rems_{identifier}">
         <WORKFLOW_ID>1</WORKFLOW_ID>
         <ORGANISATION_ID>nbn</ORGANISATION_ID>
         <DATASET_REF alias="{identifier}"/>
