@@ -31,11 +31,12 @@ def create_folders(base_path, identifier):
         os.makedirs(os.path.join(dataset_path, folder), exist_ok=True)
     return dataset_path
 
-def create_dicom_image(images_dir, image_id, image_size_mb):
+def create_dicom_image(images_dir, identifier, image_size_mb):
     images_data = []
 
     for i in range(1, 3):
-        image_alias = str(i)
+        # Local folder uses directory standard, alias uses unique project-wide scope
+        image_alias = f"image_{i}_{identifier}"
         subfolder_rel = f"IMAGE_{image_alias}"
         subfolder_abs = os.path.join(images_dir, subfolder_rel)
         os.makedirs(subfolder_abs, exist_ok=True)
@@ -303,11 +304,12 @@ def create_xml_files(metadata_path, identifier, images_data, annotation_info):
     with open(os.path.join(metadata_path, "image.xml"), "w") as f:
         f.write(image_xml)
 
-    # annotation.xml
+    # annotation.xml - image_ref updated to point to the scoped first image alias
+    first_image_alias = images_data[0]["alias"]
     annotation_xml = f"""<?xml version="1.0" encoding="UTF-8"?>
 <ANNOTATION_SET xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
     <ANNOTATION alias="annotation_{identifier}">
-        <IMAGE_REF alias="1"/>
+        <IMAGE_REF alias="{first_image_alias}"/>
         <FILES>
             <FILE filename="{annotation_info['filename']}" checksum_method="SHA256" checksum="{annotation_info['checksum']}" filetype="json"/>
         </FILES>
