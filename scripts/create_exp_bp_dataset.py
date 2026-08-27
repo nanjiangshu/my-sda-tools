@@ -11,7 +11,11 @@ import argparse
 def create_folders(base_path, identifier):
     dataset_path = os.path.join(base_path, f"DATASET_{identifier}")
     folders = [
-        "METADATA", "IMAGES", "ANNOTATIONS", "LANDING_PAGE/THUMBNAILS", "PRIVATE"
+        "METADATA",
+        "IMAGES",
+        "ANNOTATIONS",
+        "LANDING_PAGE/THUMBNAILS",
+        "PRIVATE"
     ]
 
     for folder in folders:
@@ -20,9 +24,12 @@ def create_folders(base_path, identifier):
 
 def create_xml_files(metadata_path):
     xml_files = {
-        "dataset.xml": "Dataset", "policy.xml": "Policy",
-        "image.xml": "Images", "annotation.xml": "Annotations",
-        "observation.xml": "Observations", "observer.xml": "Observers",
+        "dataset.xml": "Dataset",
+        "policy.xml": "Policy",
+        "image.xml": "Images",
+        "annotation.xml": "Annotations",
+        "observation.xml": "Observations",
+        "observer.xml": "Observers",
         "sample.xml": "Biological Beings, Cases, Specimens, Blocks and Slides",
         "staining.xml": "Stainings"
     }
@@ -46,12 +53,12 @@ def create_geojson(annotations_path):
         json.dump(geojson_data, f, indent=4)
 
 def create_dicom_image(image_path, image_id, image_size_mb):
-    for i in range(2):  # Ensure at least two images
+    for i in range(2):  # Create two image subdirectories
         filename = os.path.join(image_path, f"IMAGE_{image_id}_{i}")
         os.makedirs(filename, exist_ok=True)
 
         image_size = (512, 512)
-        num_slices = max(1, int((image_size_mb * 1024 * 1024) / (512 * 512)))  # Approximate slices count
+        num_slices = max(1, int((image_size_mb * 1024 * 1024) / (512 * 512)))
         pixel_array = np.random.randint(0, 256, size=image_size, dtype=np.uint8)
 
         for j in range(num_slices):
@@ -62,74 +69,45 @@ def create_dicom_image(image_path, image_id, image_size_mb):
             ds.PixelData = pixel_array.tobytes()
 
             dcm_file = os.path.join(filename, f"slice_{j}.dcm")
-            FileDataset(dcm_file, ds, preamble=b"\0" * 128).save_as(dcm_file)
+            file_ds = FileDataset(dcm_file, ds, preamble=b"\0" * 128)
+            file_ds.save_as(dcm_file)
 
-def create_thumbnails(landing_page_path):
+def create_landing_page(landing_page_path):
+    # 1. Create landing_page.xml
+    with open(os.path.join(landing_page_path, "landing_page.xml"), "w") as f:
+        f.write("<Landing Page />\n")
+
+    # 2. Populate THUMBNAILS directory
     thumbnail_path = os.path.join(landing_page_path, "THUMBNAILS")
     for i in range(3):
         img = Image.fromarray(np.random.randint(0, 256, (100, 100, 3), dtype=np.uint8))
         img.save(os.path.join(thumbnail_path, f"thumbnail_{i}.jpg"))
 
-def create_landing_page_html(landing_page_path, identifier):
-    html_content = f"""<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dataset {identifier} - Landing Page</title>
-    <style>
-        body {{ font-family: Arial, sans-serif; margin: 40px; background-color: #f4f4f9; color: #333; }}
-        h1 {{ color: #0056b3; }}
-        .gallery {{ display: flex; gap: 10px; margin-top: 20px; }}
-        .gallery img {{ border: 2px solid #ccc; border-radius: 4px; width: 100px; height: 100px; }}
-        .info {{ background: #fff; padding: 20px; border-radius: 5px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }}
-    </style>
-</head>
-<body>
-    <div class="info">
-        <h1>Big Picture Dataset: {identifier}</h1>
-        <p>This landing page provides an overview of dummy dataset <strong>DATASET_{identifier}</strong>.</p>
-
-        <h2>Thumbnails Preview</h2>
-        <div class="gallery">
-            <img src="THUMBNAILS/thumbnail_0.jpg" alt="Thumbnail 0">
-            <img src="THUMBNAILS/thumbnail_1.jpg" alt="Thumbnail 1">
-            <img src="THUMBNAILS/thumbnail_2.jpg" alt="Thumbnail 2">
-        </div>
-    </div>
-</body>
-</html>
-"""
-    with open(os.path.join(landing_page_path, "index.html"), "w") as f:
-        f.write(html_content)
-
 def create_private_files(private_path):
     private_files = {
         "rems.xml": "Restricted Metadata",
         "organisation.xml": "Organisation Data",
-        "datacite.xml": "<DataCite />"
+        "datacite.xml": "DataCite"
     }
     for file, content in private_files.items():
         with open(os.path.join(private_path, file), "w") as f:
-            f.write(content)
+            f.write(f"<{content} />\n")
 
 def create_dataset(base_path, identifier, image_size_mb):
     dataset_path = create_folders(base_path, identifier)
-    landing_page_path = os.path.join(dataset_path, "LANDING_PAGE")
 
     create_xml_files(os.path.join(dataset_path, "METADATA"))
     create_geojson(os.path.join(dataset_path, "ANNOTATIONS"))
     create_dicom_image(os.path.join(dataset_path, "IMAGES"), identifier, image_size_mb)
-    create_thumbnails(landing_page_path)
-    create_landing_page_html(landing_page_path, identifier)
+    create_landing_page(os.path.join(dataset_path, "LANDING_PAGE"))
     create_private_files(os.path.join(dataset_path, "PRIVATE"))
 
-    print(f"Dataset created at: {dataset_path}")
+    print(f"Dataset successfully created at: {dataset_path}")
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Create a dataset folder structure")
+    parser = argparse.ArgumentParser(description="Create Big Picture dummy dataset folder structure")
     parser.add_argument("identifier", type=str, help="Dataset identifier")
-    parser.add_argument("--image-size", type=int, default=10, help="Size of the image files in MB (default: 10MB)")
+    parser.add_argument("--image-size", type=int, default=10, help="Size of image files in MB (default: 10MB)")
     args = parser.parse_args()
 
     create_dataset("./", args.identifier, args.image_size)
