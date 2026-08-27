@@ -202,7 +202,7 @@ def create_xml_files(metadata_path, identifier):
     with open(os.path.join(metadata_path, "observation.xml"), "w") as f:
         f.write(observation_xml)
 
-    # staining.xml matching valid schema
+    # staining.xml
     staining_xml = f"""<?xml version="1.0" encoding="utf-8"?>
 <STAINING_SET xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
     <STAINING alias="staining_1">
@@ -294,11 +294,19 @@ def create_private_files(private_path, identifier):
     with open(os.path.join(private_path, "organisation.xml"), "w") as f:
         f.write(org_xml)
 
+    # Valid rems.xml structure aligned with your example
     rems_xml = f"""<?xml version="1.0" encoding="UTF-8"?>
 <REMS_SET xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
     <REMS alias="rems_1">
-        <DATASET_REF alias="{identifier}" />
-        <ATTRIBUTES xsi:nil="true" />
+        <WORKFLOW_ID>1</WORKFLOW_ID>
+        <ORGANISATION_ID>nbn</ORGANISATION_ID>
+        <DATASET_REF alias="{identifier}"/>
+        <ATTRIBUTES>
+            <STRING_ATTRIBUTE>
+                <TAG>test</TAG>
+                <VALUE>test</VALUE>
+            </STRING_ATTRIBUTE>
+        </ATTRIBUTES>
     </REMS>
 </REMS_SET>
 """
