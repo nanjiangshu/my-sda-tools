@@ -33,6 +33,8 @@ def create_folders(base_path, identifier):
 
 def create_dicom_image(images_dir, image_id, image_size_mb):
     file_info = []
+    global_image_counter = 1
+
     for i in range(2):
         subfolder_rel = f"IMAGE_{image_id}_{i}"
         subfolder_abs = os.path.join(images_dir, subfolder_rel)
@@ -73,11 +75,14 @@ def create_dicom_image(images_dir, image_id, image_size_mb):
 
             checksum = calculate_sha256(dcm_file)
             xml_path = f"IMAGES/{subfolder_rel}/{slice_filename}"
+
+            # Ensure each entry generated gets a unique image alias
             file_info.append({
-                "alias": f"image_{i+1}",
+                "alias": f"image_{global_image_counter}",
                 "filename": xml_path,
                 "checksum": checksum
             })
+            global_image_counter += 1
 
     return file_info
 
@@ -382,7 +387,6 @@ def create_private_files(private_path, identifier):
     with open(os.path.join(private_path, "rems.xml"), "w") as f:
         f.write(rems_xml)
 
-    # Valid DataCite XML schema inserted here
     datacite_xml = """<?xml version="1.0" encoding="UTF-8"?>
 <resource xmlns="http://datacite.org/schema/kernel-4">
     <identifier identifierType="DOI">10.1234/example.doi</identifier>
