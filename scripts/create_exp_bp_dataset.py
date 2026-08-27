@@ -72,7 +72,6 @@ def create_dicom_image(images_dir, image_id, image_size_mb):
             ds.save_as(dcm_file, write_like_original=False)
 
             checksum = calculate_sha256(dcm_file)
-            # Standardize filename format for XML (IMAGES/folder/file.dcm)
             xml_path = f"IMAGES/{subfolder_rel}/{slice_filename}"
             file_info.append({
                 "alias": f"image_{i+1}",
@@ -82,7 +81,29 @@ def create_dicom_image(images_dir, image_id, image_size_mb):
 
     return file_info
 
-def create_xml_files(metadata_path, identifier, dicom_files):
+def create_geojson(annotations_path):
+    geojson_data = {
+        "type": "FeatureCollection",
+        "features": [{
+            "type": "Feature",
+            "geometry": {
+                "type": "Point",
+                "coordinates": [random.uniform(-180, 180), random.uniform(-90, 90)]
+            },
+            "properties": {"name": "Annotation 1"}
+        }]
+    }
+    file_abs = os.path.join(annotations_path, "test.geojson")
+    with open(file_abs, "w") as f:
+        json.dump(geojson_data, f, indent=4)
+
+    checksum = calculate_sha256(file_abs)
+    return {
+        "filename": "ANNOTATIONS/test.geojson",
+        "checksum": checksum
+    }
+
+def create_xml_files(metadata_path, identifier, dicom_files, annotation_info):
     # dataset.xml
     dataset_xml = f"""<?xml version="1.0" encoding="UTF-8"?>
 <DATASET_SET xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
@@ -197,7 +218,7 @@ def create_xml_files(metadata_path, identifier, dicom_files):
     with open(os.path.join(metadata_path, "sample.xml"), "w") as f:
         f.write(sample_xml)
 
-    # Dynamically generated image.xml to match exact DICOM files and hashes
+    # image.xml
     image_entries = []
     for info in dicom_files:
         image_entries.append(f"""    <IMAGE alias="{info['alias']}">
@@ -227,15 +248,20 @@ def create_xml_files(metadata_path, identifier, dicom_files):
     with open(os.path.join(metadata_path, "image.xml"), "w") as f:
         f.write(image_xml)
 
-    # annotation.xml
+    # annotation.xml matching your provided structure with dynamic checksums
     annotation_xml = f"""<?xml version="1.0" encoding="UTF-8"?>
 <ANNOTATION_SET xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
-    <ANNOTATION alias="annotation_1">
-        <IMAGE_REF alias="image_1" />
+    <ANNOTATION alias="1">
+        <IMAGE_REF alias="image_1"/>
         <FILES>
-            <FILE filename="annotation.geojson" checksum_method="SHA256" checksum="0000000000000000000000000000000000000000000000000000000000000000" filetype="json" />
+            <FILE filename="{annotation_info['filename']}" checksum_method="SHA256" checksum="{annotation_info['checksum']}" filetype="json"/>
         </FILES>
-        <ATTRIBUTES xsi:nil="true" />
+        <ATTRIBUTES>
+            <STRING_ATTRIBUTE>
+                <TAG>test</TAG>
+                <VALUE>test</VALUE>
+            </STRING_ATTRIBUTE>
+        </ATTRIBUTES>
     </ANNOTATION>
 </ANNOTATION_SET>
 """
@@ -296,28 +322,25 @@ def create_xml_files(metadata_path, identifier, dicom_files):
     with open(os.path.join(metadata_path, "staining.xml"), "w") as f:
         f.write(staining_xml)
 
-def create_geojson(annotations_path):
-    geojson_data = {
-        "type": "FeatureCollection",
-        "features": [{
-            "type": "Feature",
-            "geometry": {
-                "type": "Point",
-                "coordinates": [random.uniform(-180, 180), random.uniform(-90, 90)]
-            },
-            "properties": {"name": "Annotation 1"}
-        }]
-    }
-    with open(os.path.join(annotations_path, "annotation.geojson"), "w") as f:
-        json.dump(geojson_data, f, indent=4)
-
 def create_landing_page(landing_page_path, identifier):
+    thumbnail_path = os.path.join(landing_page_path, "THUMBNAILS")
+
+    thumb_rel_path = "LANDING_PAGE/THUMBNAILS/thumbnail_0.jpg"
+    first_thumb_hash = ""
+
+    for i in range(3):
+        img = Image.fromarray(np.random.randint(0, 256, (100, 100, 3), dtype=np.uint8))
+        thumb_abs = os.path.join(thumbnail_path, f"thumbnail_{i}.jpg")
+        img.save(thumb_abs)
+        if i == 0:
+            first_thumb_hash = calculate_sha256(thumb_abs)
+
     landing_page_xml = f"""<?xml version="1.0" encoding="UTF-8"?>
 <LANDING_PAGE_SET xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
     <LANDING_PAGE alias="landing_page_{identifier}">
         <DATASET_REF alias="{identifier}" />
         <SAMPLE_IMAGE_FILES>
-            <SAMPLE_IMAGE_FILE filename="THUMBNAILS/thumbnail_0.jpg" checksum_method="SHA256" checksum="0000000000000000000000000000000000000000000000000000000000000000" filetype="jpg" />
+            <SAMPLE_IMAGE_FILE filename="{thumb_rel_path}" checksum_method="SHA256" checksum="{first_thumb_hash}" unencrypted_checksum="{first_thumb_hash}" filetype="jpg" />
         </SAMPLE_IMAGE_FILES>
         <ATTRIBUTES xsi:nil="true" />
     </LANDING_PAGE>
@@ -325,11 +348,6 @@ def create_landing_page(landing_page_path, identifier):
 """
     with open(os.path.join(landing_page_path, "landing_page.xml"), "w") as f:
         f.write(landing_page_xml)
-
-    thumbnail_path = os.path.join(landing_page_path, "THUMBNAILS")
-    for i in range(3):
-        img = Image.fromarray(np.random.randint(0, 256, (100, 100, 3), dtype=np.uint8))
-        img.save(os.path.join(thumbnail_path, f"thumbnail_{i}.jpg"))
 
 def create_private_files(private_path, identifier):
     org_xml = f"""<?xml version="1.0" encoding="UTF-8"?>
@@ -371,8 +389,9 @@ def create_dataset(base_path, identifier, image_size_mb):
     dataset_path = create_folders(base_path, identifier)
 
     dicom_files = create_dicom_image(os.path.join(dataset_path, "IMAGES"), identifier, image_size_mb)
-    create_xml_files(os.path.join(dataset_path, "METADATA"), identifier, dicom_files)
-    create_geojson(os.path.join(dataset_path, "ANNOTATIONS"))
+    annotation_info = create_geojson(os.path.join(dataset_path, "ANNOTATIONS"))
+
+    create_xml_files(os.path.join(dataset_path, "METADATA"), identifier, dicom_files, annotation_info)
     create_landing_page(os.path.join(dataset_path, "LANDING_PAGE"), identifier)
     create_private_files(os.path.join(dataset_path, "PRIVATE"), identifier)
 
