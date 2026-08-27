@@ -70,6 +70,39 @@ def create_thumbnails(landing_page_path):
         img = Image.fromarray(np.random.randint(0, 256, (100, 100, 3), dtype=np.uint8))
         img.save(os.path.join(thumbnail_path, f"thumbnail_{i}.jpg"))
 
+def create_landing_page_html(landing_page_path, identifier):
+    html_content = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dataset {identifier} - Landing Page</title>
+    <style>
+        body {{ font-family: Arial, sans-serif; margin: 40px; background-color: #f4f4f9; color: #333; }}
+        h1 {{ color: #0056b3; }}
+        .gallery {{ display: flex; gap: 10px; margin-top: 20px; }}
+        .gallery img {{ border: 2px solid #ccc; border-radius: 4px; width: 100px; height: 100px; }}
+        .info {{ background: #fff; padding: 20px; border-radius: 5px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }}
+    </style>
+</head>
+<body>
+    <div class="info">
+        <h1>Big Picture Dataset: {identifier}</h1>
+        <p>This landing page provides an overview of dummy dataset <strong>DATASET_{identifier}</strong>.</p>
+
+        <h2>Thumbnails Preview</h2>
+        <div class="gallery">
+            <img src="THUMBNAILS/thumbnail_0.jpg" alt="Thumbnail 0">
+            <img src="THUMBNAILS/thumbnail_1.jpg" alt="Thumbnail 1">
+            <img src="THUMBNAILS/thumbnail_2.jpg" alt="Thumbnail 2">
+        </div>
+    </div>
+</body>
+</html>
+"""
+    with open(os.path.join(landing_page_path, "index.html"), "w") as f:
+        f.write(html_content)
+
 def create_private_files(private_path):
     private_files = {
         "rems.xml": "Restricted Metadata",
@@ -82,10 +115,13 @@ def create_private_files(private_path):
 
 def create_dataset(base_path, identifier, image_size_mb):
     dataset_path = create_folders(base_path, identifier)
+    landing_page_path = os.path.join(dataset_path, "LANDING_PAGE")
+
     create_xml_files(os.path.join(dataset_path, "METADATA"))
     create_geojson(os.path.join(dataset_path, "ANNOTATIONS"))
     create_dicom_image(os.path.join(dataset_path, "IMAGES"), identifier, image_size_mb)
-    create_thumbnails(os.path.join(dataset_path, "LANDING_PAGE"))
+    create_thumbnails(landing_page_path)
+    create_landing_page_html(landing_page_path, identifier)
     create_private_files(os.path.join(dataset_path, "PRIVATE"))
 
     print(f"Dataset created at: {dataset_path}")
@@ -97,4 +133,3 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     create_dataset("./", args.identifier, args.image_size)
-
