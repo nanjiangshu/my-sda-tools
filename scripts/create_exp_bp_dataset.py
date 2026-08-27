@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 import os
 import random
 import pydicom
@@ -12,7 +13,7 @@ def create_folders(base_path, identifier):
     folders = [
         "METADATA", "IMAGES", "ANNOTATIONS", "LANDING_PAGE/THUMBNAILS", "PRIVATE"
     ]
-    
+
     for folder in folders:
         os.makedirs(os.path.join(dataset_path, folder), exist_ok=True)
     return dataset_path
@@ -48,18 +49,18 @@ def create_dicom_image(image_path, image_id, image_size_mb):
     for i in range(2):  # Ensure at least two images
         filename = os.path.join(image_path, f"IMAGE_{image_id}_{i}")
         os.makedirs(filename, exist_ok=True)
-        
+
         image_size = (512, 512)
         num_slices = max(1, int((image_size_mb * 1024 * 1024) / (512 * 512)))  # Approximate slices count
         pixel_array = np.random.randint(0, 256, size=image_size, dtype=np.uint8)
-        
+
         for j in range(num_slices):
             ds = Dataset()
             ds.PatientName = "Test^Patient"
             ds.Rows, ds.Columns = image_size
             ds.PhotometricInterpretation = "MONOCHROME2"
             ds.PixelData = pixel_array.tobytes()
-            
+
             dcm_file = os.path.join(filename, f"slice_{j}.dcm")
             FileDataset(dcm_file, ds, preamble=b"\0" * 128).save_as(dcm_file)
 
@@ -86,7 +87,7 @@ def create_dataset(base_path, identifier, image_size_mb):
     create_dicom_image(os.path.join(dataset_path, "IMAGES"), identifier, image_size_mb)
     create_thumbnails(os.path.join(dataset_path, "LANDING_PAGE"))
     create_private_files(os.path.join(dataset_path, "PRIVATE"))
-    
+
     print(f"Dataset created at: {dataset_path}")
 
 if __name__ == "__main__":
@@ -94,6 +95,6 @@ if __name__ == "__main__":
     parser.add_argument("identifier", type=str, help="Dataset identifier")
     parser.add_argument("--image-size", type=int, default=10, help="Size of the image files in MB (default: 10MB)")
     args = parser.parse_args()
-    
+
     create_dataset("./", args.identifier, args.image_size)
 
