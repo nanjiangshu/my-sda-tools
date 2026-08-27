@@ -76,7 +76,6 @@ def create_dicom_image(images_dir, image_id, image_size_mb):
             checksum = calculate_sha256(dcm_file)
             xml_path = f"IMAGES/{subfolder_rel}/{slice_filename}"
 
-            # Ensure each entry generated gets a unique image alias
             file_info.append({
                 "alias": f"image_{global_image_counter}",
                 "filename": xml_path,
@@ -212,22 +211,65 @@ def create_xml_files(metadata_path, identifier, dicom_files, annotation_info):
     with open(os.path.join(metadata_path, "policy.xml"), "w") as f:
         f.write(policy_xml)
 
-    # sample.xml
-    sample_xml = f"""<?xml version="1.0" encoding="UTF-8"?>
+    # sample.xml updated with working full hierarchy
+    sample_xml = """<?xml version="1.0" encoding="UTF-8"?>
 <SAMPLE_SET xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
-    <BIOLOGICAL_BEING alias="being_1">
-        <ATTRIBUTES xsi:nil="true" />
+    <BIOLOGICAL_BEING alias="1">
+        <ATTRIBUTES>
+            <STRING_ATTRIBUTE>
+                <TAG>test</TAG>
+                <VALUE>test</VALUE>
+            </STRING_ATTRIBUTE>
+        </ATTRIBUTES>
     </BIOLOGICAL_BEING>
+    <CASE alias="1">
+        <BIOLOGICAL_BEING_REF alias="1"/>
+        <ATTRIBUTES>
+            <STRING_ATTRIBUTE>
+                <TAG>test</TAG>
+                <VALUE>test</VALUE>
+            </STRING_ATTRIBUTE>
+        </ATTRIBUTES>
+    </CASE>
+    <SPECIMEN alias="1">
+        <EXTRACTED_FROM_REF alias="1"/>
+        <PART_OF_CASE_REF alias="1"/>
+        <ATTRIBUTES>
+            <STRING_ATTRIBUTE>
+                <TAG>test</TAG>
+                <VALUE>test</VALUE>
+            </STRING_ATTRIBUTE>
+        </ATTRIBUTES>
+    </SPECIMEN>
+    <BLOCK alias="1">
+        <SAMPLED_FROM_REF alias="1"/>
+        <ATTRIBUTES>
+            <STRING_ATTRIBUTE>
+                <TAG>test</TAG>
+                <VALUE>test</VALUE>
+            </STRING_ATTRIBUTE>
+        </ATTRIBUTES>
+    </BLOCK>
+    <SLIDE alias="1">
+        <CREATED_FROM_REF alias="1"/>
+        <STAINING_INFORMATION_REF alias="staining_1"/>
+        <ATTRIBUTES>
+            <STRING_ATTRIBUTE>
+                <TAG>test</TAG>
+                <VALUE>test</VALUE>
+            </STRING_ATTRIBUTE>
+        </ATTRIBUTES>
+    </SLIDE>
 </SAMPLE_SET>
 """
     with open(os.path.join(metadata_path, "sample.xml"), "w") as f:
         f.write(sample_xml)
 
-    # image.xml
+    # image.xml updated to reference slide alias "1"
     image_entries = []
     for info in dicom_files:
         image_entries.append(f"""    <IMAGE alias="{info['alias']}">
-        <IMAGE_OF alias="being_1"/>
+        <IMAGE_OF alias="1"/>
         <IMAGE_TYPE>
             <WSI_IMAGE>test</WSI_IMAGE>
         </IMAGE_TYPE>
