@@ -211,7 +211,7 @@ def create_xml_files(metadata_path, identifier, dicom_files, annotation_info):
     with open(os.path.join(metadata_path, "policy.xml"), "w") as f:
         f.write(policy_xml)
 
-    # sample.xml updated with working full hierarchy
+    # sample.xml
     sample_xml = """<?xml version="1.0" encoding="UTF-8"?>
 <SAMPLE_SET xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
     <BIOLOGICAL_BEING alias="1">
@@ -265,7 +265,7 @@ def create_xml_files(metadata_path, identifier, dicom_files, annotation_info):
     with open(os.path.join(metadata_path, "sample.xml"), "w") as f:
         f.write(sample_xml)
 
-    # image.xml updated to reference slide alias "1"
+    # image.xml
     image_entries = []
     for info in dicom_files:
         image_entries.append(f"""    <IMAGE alias="{info['alias']}">
@@ -316,11 +316,16 @@ def create_xml_files(metadata_path, identifier, dicom_files, annotation_info):
         f.write(annotation_xml)
 
     # observer.xml
-    observer_xml = f"""<?xml version="1.0" encoding="UTF-8"?>
+    observer_xml = """<?xml version="1.0" encoding="UTF-8"?>
 <OBSERVER_SET xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
-    <OBSERVER alias="observer_1">
+    <OBSERVER alias="1">
         <OBSERVER_TYPE>Human</OBSERVER_TYPE>
-        <ATTRIBUTES xsi:nil="true" />
+        <ATTRIBUTES>
+            <STRING_ATTRIBUTE>
+                <TAG>test</TAG>
+                <VALUE>test</VALUE>
+            </STRING_ATTRIBUTE>
+        </ATTRIBUTES>
     </OBSERVER>
 </OBSERVER_SET>
 """
@@ -328,19 +333,40 @@ def create_xml_files(metadata_path, identifier, dicom_files, annotation_info):
         f.write(observer_xml)
 
     # observation.xml
-    observation_xml = f"""<?xml version="1.0" encoding="UTF-8"?>
+    observation_xml = """<?xml version="1.0" encoding="UTF-8"?>
 <OBSERVATION_SET xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
-    <OBSERVATION alias="observation_1">
-        <IMAGE_REF alias="image_1" />
+    <OBSERVATION alias="1">
+        <ANNOTATION_REF alias="1"/>
+        <OBSERVER_REF alias="1"/>
         <STATEMENT>
-            <STATEMENT_TYPE>Finding</STATEMENT_TYPE>
-            <STATEMENT_STATUS>Distinct</STATEMENT_STATUS>
-            <CODE_ATTRIBUTES xsi:nil="true" />
-            <CUSTOM_ATTRIBUTES xsi:nil="true" />
-            <FREETEXT>Automated test observation.</FREETEXT>
-            <ATTRIBUTES xsi:nil="true" />
+            <STATEMENT_TYPE>Diagnosis</STATEMENT_TYPE>
+            <STATEMENT_STATUS>Summary</STATEMENT_STATUS>
+            <CODE_ATTRIBUTES>
+                <CODE_ATTRIBUTE>
+                    <TAG>test</TAG>
+                    <VALUE>
+                        <CODE>test</CODE>
+                        <SCHEME>test</SCHEME>
+                        <MEANING>test</MEANING>
+                        <SCHEME_VERSION>1.0</SCHEME_VERSION>
+                    </VALUE>
+                </CODE_ATTRIBUTE>
+            </CODE_ATTRIBUTES>
+            <CUSTOM_ATTRIBUTES>
+                <STRING_ATTRIBUTE>
+                    <TAG>test</TAG>
+                    <VALUE>test</VALUE>
+                </STRING_ATTRIBUTE>
+            </CUSTOM_ATTRIBUTES>
+            <FREETEXT>test</FREETEXT>
+            <ATTRIBUTES xsi:nil="true"/>
         </STATEMENT>
-        <ATTRIBUTES xsi:nil="true" />
+        <ATTRIBUTES>
+            <STRING_ATTRIBUTE>
+                <TAG>test</TAG>
+                <VALUE>test</VALUE>
+            </STRING_ATTRIBUTE>
+        </ATTRIBUTES>
     </OBSERVATION>
 </OBSERVATION_SET>
 """
