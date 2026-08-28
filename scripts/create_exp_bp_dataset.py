@@ -35,14 +35,15 @@ def create_dicom_image(images_dir, identifier, image_size_mb):
     images_data = []
 
     for i in range(1, 3):
-        # Local folder uses directory standard, alias uses unique project-wide scope
         image_alias = f"image_{i}_{identifier}"
         subfolder_rel = f"IMAGE_{image_alias}"
         subfolder_abs = os.path.join(images_dir, subfolder_rel)
         os.makedirs(subfolder_abs, exist_ok=True)
 
         image_size = (512, 512)
-        num_slices = max(1, int((image_size_mb * 1024 * 1024) / (512 * 512)))
+        # Cap slices at a maximum of 9
+        calculated_slices = int((image_size_mb * 1024 * 1024) / (512 * 512))
+        num_slices = min(9, max(1, calculated_slices))
         pixel_array = np.random.randint(0, 256, size=image_size, dtype=np.uint8)
 
         files = []
@@ -304,7 +305,7 @@ def create_xml_files(metadata_path, identifier, images_data, annotation_info):
     with open(os.path.join(metadata_path, "image.xml"), "w") as f:
         f.write(image_xml)
 
-    # annotation.xml - image_ref updated to point to the scoped first image alias
+    # annotation.xml
     first_image_alias = images_data[0]["alias"]
     annotation_xml = f"""<?xml version="1.0" encoding="UTF-8"?>
 <ANNOTATION_SET xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
@@ -432,7 +433,7 @@ def create_landing_page(landing_page_path, identifier):
     with open(os.path.join(landing_page_path, "landing_page.xml"), "w") as f:
         f.write(landing_page_xml)
 
-def create_private_files(private_path, identifier):
+def create_private_files(private_path, identifier, create_datacite=True):
     org_xml = f"""<?xml version="1.0" encoding="UTF-8"?>
 <ORGANISATION_SET xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
     <ORGANISATION alias="org_{identifier}">
@@ -451,7 +452,7 @@ def create_private_files(private_path, identifier):
 <REMS_SET xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
     <REMS alias="rems_{identifier}">
         <WORKFLOW_ID>1</WORKFLOW_ID>
-        <ORGANISATION_ID>nbn</ORGANISATION_ID>
+        <ORGANISATION_ID>Demo org</ORGANISATION_ID>
         <DATASET_REF alias="{identifier}"/>
         <ATTRIBUTES>
             <STRING_ATTRIBUTE>
@@ -465,9 +466,10 @@ def create_private_files(private_path, identifier):
     with open(os.path.join(private_path, "rems.xml"), "w") as f:
         f.write(rems_xml)
 
-    datacite_xml = """<?xml version="1.0" encoding="UTF-8"?>
+    if create_datacite:
+        datacite_xml = f"""<?xml version="1.0" encoding="UTF-8"?>
 <resource xmlns="http://datacite.org/schema/kernel-4">
-    <identifier identifierType="DOI">10.1234/example.doi</identifier>
+    <identifier identifierType="DOI">10.1234/example.doi.{identifier}</identifier>
     <creators>
         <creator>
             <creatorName nameType="Personal">Smith, John</creatorName>
@@ -486,9 +488,9 @@ def create_private_files(private_path, identifier):
         </contributor>
     </contributors>
     <titles>
-        <title>Sample Dataset</title>
+        <title>Sample Dataset {identifier}</title>
     </titles>
-    <publicationYear>2022</publicationYear>
+    <publicationYear>2026</publicationYear>
     <version>1.0</version>
     <resourceType resourceTypeGeneral="Dataset">Dataset</resourceType>
     <rightsList>
@@ -498,80 +500,28 @@ def create_private_files(private_path, identifier):
         <subject subjectScheme="OKM Ontology" schemeURI="http://www.yso.fi/onto/okm-tieteenala/conceptscheme" valueURI="http://www.yso.fi/onto/okm-tieteenala/ta6122" classificationCode="6122">Literature studies</subject>
     </subjects>
     <dates>
-        <date dateType="Created">2020-01-01</date>
-        <date dateType="Updated" dateInformation="Metadata updated">2022-01-01</date>
+        <date dateType="Created">2026-01-01</date>
+        <date dateType="Updated" dateInformation="Metadata updated">2026-01-01</date>
     </dates>
     <language>en</language>
-    <relatedIdentifiers>
-        <relatedIdentifier relatedIdentifierType="DOI" relationType="IsCitedBy" relatedMetadataScheme="datacite" schemeURI="http://example.org/scheme" schemeType="someType" resourceTypeGeneral="Dataset">10.2345/other.doi</relatedIdentifier>
-    </relatedIdentifiers>
     <alternateIdentifiers>
-        <alternateIdentifier alternateIdentifierType="LocalID">abc-123</alternateIdentifier>
+        <alternateIdentifier alternateIdentifierType="LocalID">{identifier}</alternateIdentifier>
     </alternateIdentifiers>
     <sizes>
         <size>1GB</size>
     </sizes>
     <formats>
-        <format>text/csv</format>
+        <format>application/octet-stream</format>
     </formats>
     <descriptions>
-        <description descriptionType="Abstract" xml:lang="en">This is a sample abstract description.</description>
+        <description descriptionType="Abstract" xml:lang="en">This is an automated sample test dataset for dataset identifier {identifier}.</description>
     </descriptions>
-    <geoLocations>
-        <geoLocation>
-            <geoLocationPlace>Helsinki</geoLocationPlace>
-            <geoLocationPoint>
-                <pointLatitude>60.1699</pointLatitude>
-                <pointLongitude>24.9384</pointLongitude>
-            </geoLocationPoint>
-            <geoLocationBox>
-                <westBoundLongitude>24.0</westBoundLongitude>
-                <eastBoundLongitude>25.0</eastBoundLongitude>
-                <southBoundLatitude>60.0</southBoundLatitude>
-                <northBoundLatitude>61.0</northBoundLatitude>
-            </geoLocationBox>
-            <geoLocationPolygon>
-                <polygonPoint>
-                    <pointLatitude>41.991</pointLatitude>
-                    <pointLongitude>-71.032</pointLongitude>
-                </polygonPoint>
-                <polygonPoint>
-                    <pointLatitude>42.893</pointLatitude>
-                    <pointLongitude>-69.622</pointLongitude>
-                </polygonPoint>
-                <polygonPoint>
-                    <pointLatitude>41.991</pointLatitude>
-                    <pointLongitude>-68.211</pointLongitude>
-                </polygonPoint>
-                <polygonPoint>
-                    <pointLatitude>41.090</pointLatitude>
-                    <pointLongitude>-69.622</pointLongitude>
-                </polygonPoint>
-                <polygonPoint>
-                    <pointLatitude>41.991</pointLatitude>
-                    <pointLongitude>-71.032</pointLongitude>
-                </polygonPoint>
-                <inPolygonPoint>
-                    <pointLatitude>41.500</pointLatitude>
-                    <pointLongitude>-69.800</pointLongitude>
-                </inPolygonPoint>
-            </geoLocationPolygon>
-        </geoLocation>
-    </geoLocations>
-    <fundingReferences>
-        <fundingReference>
-            <funderName>Commission on Higher Education</funderName>
-            <funderIdentifier funderIdentifierType="ROR" schemeURI="http://example.org/schema/SA12345">https://ror.org/04s346m05</funderIdentifier>
-            <awardNumber awardURI="http://example.org/grant/GA12345">GA12345</awardNumber>
-            <awardTitle>Climate Research Grant</awardTitle>
-        </fundingReference>
-    </fundingReferences>
 </resource>
 """
-    with open(os.path.join(private_path, "datacite.xml"), "w") as f:
-        f.write(datacite_xml)
+        with open(os.path.join(private_path, "datacite.xml"), "w") as f:
+            f.write(datacite_xml)
 
-def create_dataset(base_path, identifier, image_size_mb):
+def create_dataset(base_path, identifier, image_size_mb, create_datacite=True):
     dataset_path = create_folders(base_path, identifier)
 
     images_data = create_dicom_image(os.path.join(dataset_path, "IMAGES"), identifier, image_size_mb)
@@ -579,7 +529,7 @@ def create_dataset(base_path, identifier, image_size_mb):
 
     create_xml_files(os.path.join(dataset_path, "METADATA"), identifier, images_data, annotation_info)
     create_landing_page(os.path.join(dataset_path, "LANDING_PAGE"), identifier)
-    create_private_files(os.path.join(dataset_path, "PRIVATE"), identifier)
+    create_private_files(os.path.join(dataset_path, "PRIVATE"), identifier, create_datacite=create_datacite)
 
     print(f"Dataset successfully created at: {dataset_path}")
 
@@ -587,6 +537,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Create Big Picture dummy dataset folder structure")
     parser.add_argument("identifier", type=str, help="Dataset identifier")
     parser.add_argument("--image-size", type=int, default=10, help="Size of image files in MB (default: 10MB)")
+    parser.add_argument("--no-datacite", action="store_true", help="Skip creating PRIVATE/datacite.xml")
     args = parser.parse_args()
 
-    create_dataset("./", args.identifier, args.image_size)
+    create_dataset("./", args.identifier, args.image_size, create_datacite=not args.no_datacite)
