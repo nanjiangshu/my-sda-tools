@@ -451,7 +451,7 @@ def create_private_files(private_path, identifier, create_datacite=True):
     rems_xml = f"""<?xml version="1.0" encoding="UTF-8"?>
 <REMS_SET xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
     <REMS alias="rems_{identifier}">
-        <WORKFLOW_ID>69</WORKFLOW_ID>
+        <WORKFLOW_ID>1</WORKFLOW_ID>
         <ORGANISATION_ID>demo</ORGANISATION_ID>
         <DATASET_REF alias="{identifier}"/>
         <ATTRIBUTES>
