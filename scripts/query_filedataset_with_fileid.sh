@@ -7,7 +7,7 @@ set -euo pipefail
 # for fega-staging, namespace is fega-staging and the service is svc/fega-staging-sda-postgres-ro
 # for fega-prod, name space is fega-prod and the service is svc/fega-prod-sda-postgres-ro
 # for bp-staging, namespace is bp-staging and the service is svc/cnpg-sda-staging-ro
-# for bp-prod, namespace is bp-prod and the service is svc/postgres-cluster-ro 
+# for bp-prod, namespace is bp-prod and the service is svc/postgres-cluster-ro
 
 # note that the target option is optional and defaults to bp-prod if not provided
 
@@ -46,11 +46,11 @@ case $target in
         service="svc/fega-prod-sda-postgres-ro"
         ;;
     bp-staging)
-        namespace="bp-staging"
+        namespace="sda-staging"
         service="svc/cnpg-sda-staging-ro"
         ;;
     bp-prod)
-        namespace="bp-prod"
+        namespace="sda-prod"
         service="svc/postgres-cluster-ro"
         ;;
     *)
