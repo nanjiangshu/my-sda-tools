@@ -1,8 +1,7 @@
 #!/bin/bash
 
 # This script retrieves the file stable IDs for a given dataset ID
-
-set -e -x
+set -e
 usage="Usage: $0 -target <target-environment>
 
     -target <target-environment> : Specify the target environment (fega-staging, fega-prod, bp-staging, bp-prod)
