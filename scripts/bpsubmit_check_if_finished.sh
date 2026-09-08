@@ -35,7 +35,7 @@ echo -e "USER_ID:\t$USER_ID"
 echo -e "DATASET_FOLDER:\t$DATASET_FOLDER"
 
 # check if all files are mapped to the dataset
-bash $binpath/get_file_stableids_from_datasetid.sh $DATASET_ID > $DATASET_FOLDER.mapped_stableids.txt
+bash $binpath/get_file_stableids_from_datasetid.sh $DATASET_ID -target bp-prod > $DATASET_FOLDER.mapped_stableids.txt
 
 mkdir -p data
 if [ ! -s data/${DATASET_FOLDER}-stableIDs.txt ] ; then

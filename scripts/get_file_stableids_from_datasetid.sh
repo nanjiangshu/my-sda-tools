@@ -13,11 +13,10 @@ Example: $0 -target fega-staging <dataset_stableID>
 target=""
 while [[ "$#" -gt 0 ]]; do
     case $1 in
-        -target) target="$2"; shift ;;
+        -target) target="$2"; shift 2;;
         -*) echo "Unknown option: $1" ; echo "$usage" ; exit 1 ;;
         *) dataset_stableID="$1" ; shift ;;
     esac
-    shift
 done
 case $target in
     fega-staging)
