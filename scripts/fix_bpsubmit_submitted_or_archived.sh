@@ -29,9 +29,9 @@ function fix_uploaded() {
     num_files=$(wc -l < "$fileidlist_file")
     echo "Found $num_files files in uploaded status. Re-ingesting them."
     # do you want to proceed?
-    read -p "Do you want to proceed? (y/n) " -n 1 -r
+    read -p "Do you want to proceed? (y/n) " -r
     echo    # move to a new line
-    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+    if [[ ! $REPLY =~ ^[Yy]([Ee][Ss])?$ ]]; then
         echo "Aborting."
         exit 0
     fi
@@ -53,9 +53,9 @@ function fix_submitted_or_archived() {
     num_files=$(wc -l < "$fileidlist_file")
     echo "Found $num_files files in submitted or archived status. Updating their status to uploaded and re-ingesting them."
     # do you want to proceed?
-    read -p "Do you want to proceed? (y/n) " -n 1 -r
+    read -p "Do you want to proceed? (y/n) " -r
     echo    # move to a new line
-    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+    if [[ ! $REPLY =~ ^[Yy]([Ee][Ss])?$ ]]; then
         echo "Aborting."
         exit 0
     fi
