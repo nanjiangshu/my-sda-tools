@@ -23,12 +23,12 @@ RetrieveFile(){
     local fileid=$1
     if [[ -z "$fileid" ]]; then
         echo "Error: Empty file ID provided."
-        return 1 
+        return 1
     fi
     echo "--- Processing file ID: $fileid ---"
 
-    # 1. Get the header. 
-    # Using 'if !' ensures that if the script fails, we can catch it manually 
+    # 1. Get the header.
+    # Using 'if !' ensures that if the script fails, we can catch it manually
     # rather than having the whole script crash due to 'set -e'.
     if ! bash "$binpath/get_header_using_fileid.sh" "$fileid" | xxd -r -p > "$tmpdir/$fileid.header.bin"; then
         echo "Error: Failed to retrieve or convert header for $fileid"
@@ -36,16 +36,20 @@ RetrieveFile(){
     fi
 
     # 2. Attempt retrieval from the first S3 bucket
-    echo "Attempting download from archive-2024-01..."
-    if ! s3cmd -c "$s3cmdconf" get "s3://archive-2024-01/$fileid" "$tmpdir/$fileid.newstorage"; then
-        echo "File not found in 2024-01 bucket. Trying archive-2025-11..."
-        
-        # 3. Fallback: Attempt retrieval from the second S3 bucket
-        if ! s3cmd -c "$s3cmdconf" get "s3://archive-2025-11/$fileid" "$tmpdir/$fileid.newstorage"; then
-            echo "Error: File $fileid could not be found in either bucket."
-            return 1
+    # List all archive buckets and try to retrieve the file from each until successful
+    BUCKETS=($(s3cmd -c "$s3cmdconf" ls s3:// | grep "/\<archive.[0-9]\>" | awk '{print $3}' | sed 's/s3:\/\///' | sort -r))
+    BUCKETS+=("archive-2024-01")
+    BUCKETS+=("archive-2025-11")
+    # loop through the buckets in reverse order (archive.2, archive.1, etc.)
+    for bucket in "${BUCKETS[@]}"; do
+        echo "Attempting download from $bucket"
+        if s3cmd -c "$s3cmdconf" get "s3://${bucket}/${fileid}" "$tmpdir/$fileid.newstorage"; then
+            echo "Success: Retrieved $fileid from $bucket"
+            break
+        else
+            echo "Warning: File $fileid not found in $bucket. Trying next bucket..."
         fi
-    fi
+    done
 
     # 4. Verify the file actually has content before proceeding
     if [ ! -s "$tmpdir/$fileid.newstorage" ]; then
@@ -55,10 +59,10 @@ RetrieveFile(){
 
     # 5. Concatenate and Decrypt
     cat "$tmpdir/$fileid.header.bin" "$tmpdir/$fileid.newstorage" > "$tmpdir/$fileid.c4gh"
-    
+
     # Optional: Backup the encrypted combined file
     cp "$tmpdir/$fileid.c4gh" "$outdir/$fileid.bak.c4gh"
-    
+
     echo "Decrypting $fileid..."
     if ! crypt4gh decrypt -s "$keyfile" -f "$tmpdir/$fileid.c4gh" ; then
         echo "Error: Decryption failed for $fileid. Check your passphrase or key."
