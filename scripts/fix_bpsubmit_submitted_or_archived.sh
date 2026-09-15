@@ -72,8 +72,8 @@ function fix_submitted_or_archived() {
 
 query_userfiles.sh $USER_ID $DATASET_FOLDER > $DATASET_FOLDER.userfiles.txt
 
-grep -iv "private" "$DATASET_FOLDER.userfiles.txt" | awk -F'|' '$4 ~ /^(submitted|archived)$/ { print $1 }' > t1.submitted_or_archived.fileidlist.txt
-grep -iv "private" "$DATASET_FOLDER.userfiles.txt" | awk -F'|' '$4 ~ /^(uploaded)$/ { print $1 }' > t1.uploaded.fileidlist.txt
+grep -iv "private\|landing" "$DATASET_FOLDER.userfiles.txt" | awk -F'|' '$4 ~ /^(submitted|archived)$/ { print $1 }' > t1.submitted_or_archived.fileidlist.txt
+grep -iv "private\|landing" "$DATASET_FOLDER.userfiles.txt" | awk -F'|' '$4 ~ /^(uploaded)$/ { print $1 }' > t1.uploaded.fileidlist.txt
 
 fix_uploaded t1.uploaded.fileidlist.txt
 fix_submitted_or_archived t1.submitted_or_archived.fileidlist.txt
