@@ -2,6 +2,9 @@
 set -euo pipefail
 
 # Description: This script fixes files stuck in submitted and archived status
+
+binpath="$(dirname "$0")"
+
 usage="Usage: $0 -u <user_id> -d <dataset_folder>"
 
 USER_ID=""
@@ -70,7 +73,7 @@ function fix_submitted_or_archived() {
     done
 }
 
-query_userfiles.sh $USER_ID $DATASET_FOLDER > $DATASET_FOLDER.userfiles.txt
+$binpath/query_userfiles.sh "$USER_ID" "$DATASET_FOLDER" > "$DATASET_FOLDER.userfiles.txt"
 
 grep -iv "private\|landing" "$DATASET_FOLDER.userfiles.txt" | awk -F'|' '$4 ~ /^(submitted|archived)$/ { print $1 }' > t1.submitted_or_archived.fileidlist.txt
 grep -iv "private\|landing" "$DATASET_FOLDER.userfiles.txt" | awk -F'|' '$4 ~ /^(uploaded)$/ { print $1 }' > t1.uploaded.fileidlist.txt
