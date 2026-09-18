@@ -5,15 +5,17 @@ set -euo pipefail
 
 binpath="$(dirname "$0")"
 
-usage="Usage: $0 -u <user_id> -d <dataset_folder>"
+usage="Usage: $0 -u <user_id> -d <dataset_folder> [-n|--no-overwrite-userfile]"
 
 USER_ID=""
 DATASET_FOLDER=""
+no_overwrite_userfile=false
 
-while getopts "u:d:" opt; do
+while getopts "u:d:n" opt; do
     case $opt in
         u) USER_ID="$OPTARG" ;;
         d) DATASET_FOLDER="$OPTARG" ;;
+        n) no_overwrite_userfile=true ;;
         *) echo "$usage"; exit 1 ;;
     esac
 done
@@ -73,7 +75,11 @@ function fix_submitted_or_archived() {
     done
 }
 
-$binpath/query_userfiles.sh "$USER_ID" "$DATASET_FOLDER" > "$DATASET_FOLDER.userfiles.txt"
+if [ "$no_overwrite_userfile" = true ]; then
+    echo "Using existing userfile: $DATASET_FOLDER.userfiles.txt"
+else
+    $binpath/query_userfiles.sh "$USER_ID" "$DATASET_FOLDER" > "$DATASET_FOLDER.userfiles.txt"
+fi
 
 grep -iv "private\|landing" "$DATASET_FOLDER.userfiles.txt" | awk -F'|' '$4 ~ /^(submitted|archived)$/ { print $1 }' > t1.submitted_or_archived.fileidlist.txt
 grep -iv "private\|landing" "$DATASET_FOLDER.userfiles.txt" | awk -F'|' '$4 ~ /^(uploaded)$/ { print $1 }' > t1.uploaded.fileidlist.txt
