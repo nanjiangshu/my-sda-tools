@@ -102,28 +102,11 @@ if [[ ! -s "$userfiles_file" ]]; then
     exit 1
 fi
 
-# Extract file IDs
-if [[ "$overwrite" == "true" || ! -f "$fileidlist_file" ]]; then
-    if [[ "$verbose" == "true" ]]; then
-        cat << EOF
-awk -F'|' '{print \$1}' "$userfiles_file" | sort -u > "$fileidlist_file"
-EOF
-    fi
-    awk -F'|' '{print $1}' "$userfiles_file" | sort -u > "$fileidlist_file"
-fi
-
-# Query file event logs
-if [[ "$verbose" == "true" ]]; then
-    cat << EOF
-"$binpath/query_status_in_fileeventlog_with_fileidlist.sh" "$fileidlist_file" $batch_size > "$statuslist_file"
-EOF
-fi
-run_script "query_status_in_fileeventlog_with_fileidlist.sh" bash "$binpath/query_status_in_fileeventlog_with_fileidlist.sh" "$fileidlist_file" "$batch_size" > "$statuslist_file"
 
 # Output summary statistics
 if [[ "$verbose" == "true" ]]; then
     cat << EOF
-awk -F'|' '{print \$2}' "$statuslist_file" | awk -F, '{print \$1}' | sort | uniq -c
+awk -F'|' '{print \$4}' "$userfiles_file" | sort | uniq -c
 EOF
 fi
-awk -F'|' '{print $2}' "$statuslist_file" | awk -F, '{print $1}' | sort | uniq -c
+awk -F'|' '{print $4}' "$userfiles_file" | sort | uniq -c
