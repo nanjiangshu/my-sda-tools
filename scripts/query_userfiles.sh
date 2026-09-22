@@ -102,4 +102,35 @@ WHERE f.submission_user = '$user_id'
 "
 }
 
-RunNewQueryImproved2 "$user_id" "${dataset_folder}"
+RunNewQueryImproved3() {
+    local user_id="$1"
+    local dataset_folder="$2"
+    kubectl -n sda-prod exec "$DB_APP_NAME" -c postgres -- psql -tA -U postgres -d sda -c "
+    -- EXPLAIN ANALYZE
+WITH filtered_files AS (
+    SELECT f.id, f.submission_file_path, f.stable_id, f.created_at
+    FROM sda.files f
+    WHERE f.submission_user = '$user_id'
+      AND f.submission_file_path LIKE '%$dataset_folder%'
+      AND NOT EXISTS (
+          SELECT 1 FROM sda.file_dataset d WHERE d.file_id = f.id
+      )
+)
+SELECT
+    ff.id AS file_id,
+    ff.submission_file_path,
+    ff.stable_id,
+    le.event,
+    ff.created_at
+FROM filtered_files ff
+CROSS JOIN LATERAL (
+    SELECT event
+    FROM sda.file_event_log
+    WHERE file_id = ff.id
+    ORDER BY id DESC
+    LIMIT 1
+) le;
+"
+}
+
+RunNewQueryImproved3 "$user_id" "${dataset_folder}"

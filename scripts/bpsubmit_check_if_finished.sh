@@ -38,9 +38,7 @@ echo -e "DATASET_FOLDER:\t$DATASET_FOLDER"
 bash $binpath/get_file_stableids_from_datasetid.sh $DATASET_ID -target bp-prod > $DATASET_FOLDER.mapped_stableids.txt
 
 mkdir -p data
-if [ ! -s data/${DATASET_FOLDER}-stableIDs.txt ] ; then
-    bash $binpath/get_stableid_filepath_list.sh $DATASET_FOLDER > data/${DATASET_FOLDER}-stableIDs.txt
-fi
+bash $binpath/get_stableid_filepath_list.sh $DATASET_FOLDER > data/${DATASET_FOLDER}-stableIDs.txt
 
 numFileTotal=$(cat data/${DATASET_FOLDER}-stableIDs.txt | wc -l)
 
