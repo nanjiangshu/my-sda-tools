@@ -10,6 +10,12 @@ S3CMD_CONFIG_SYNC="$HOME/.sda/s3cmd-bp-master-archive-s3a3_for_sync.conf"
 S3CMD_CONFIG_PRIVATE="$HOME/.sda/s3cmd-bp-master-private.conf"
 S3CMD_CONFIG_METADATA="$HOME/.sda/s3cmd-bp-master-metadata.conf"
 
+# if file dataset_id.txt exists, read the DATASET_ID from it, and show a message
+if [[ -f "dataset_id.txt" ]]; then
+    DATASET_ID=$(cat dataset_id.txt)
+    echo "Read DATASET_ID from dataset_id.txt: $DATASET_ID"
+fi
+
 # == pre-requisites ==
 
 current_folder_name=$(basename "$PWD")
@@ -18,8 +24,18 @@ if [[ "$current_folder_name" != "$DATASET_FOLDER" ]]; then
     exit 1
 fi
 
-if [[ -z "$DATASET_ID" || -z "$USER_ID" || -z "$DATASET_FOLDER" ]]; then
-    echo "Error: One or more required environment variables (DATASET_ID, USER_ID, DATASET_FOLDER) are not set."
+if [[ -z "$DATASET_ID" ]]; then
+    echo "Error: DATASET_ID is not set."
+    exit 1
+fi
+
+if [[ -z "$USER_ID" ]]; then
+    echo "Error: USER_ID is not set."
+    exit 1
+fi
+
+if [[ -z "$DATASET_FOLDER" ]]; then
+    echo "Error: DATASET_FOLDER is not set."
     exit 1
 fi
 
