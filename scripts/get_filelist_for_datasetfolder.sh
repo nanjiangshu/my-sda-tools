@@ -3,7 +3,7 @@
 # This script retrieves the list of files from the S3inbox for a dataset folder.
 
 SCRIPT_PATH=$(dirname "$(readlink -f "$0")")
-s3cmdFile=../s3cmd-bp-master-inbox.conf
+s3cmdFile=$HOME/.sda/s3cmd-bp-master-inbox.conf
 s3cmdFile=$(realpath "$s3cmdFile")
 server="prod"
 user_underscore=""
@@ -14,7 +14,7 @@ Usage: $0 [OPTIONS] <dataset_folder>
 Options:
     -h, --help      Show this help message and exit
     -u, --user      Specify the user (default: bp)
-    -s3cmd, --s3cmd Specify the s3cmd config file (default: ../s3cmd-bp-master-inbox.conf)
+    -s3cmd, --s3cmd Specify the s3cmd config file (default: $HOME/.sda/s3cmd-bp-master-inbox.conf)
     -server, --server   Specify the server (default: prod)
 """
 
