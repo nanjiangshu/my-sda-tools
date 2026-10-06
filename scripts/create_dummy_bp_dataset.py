@@ -10,6 +10,10 @@ from pydicom.uid import ExplicitVRLittleEndian, generate_uid
 import json
 import argparse
 
+parser = argparse.ArgumentParser(description="Create dummy BP dataset")
+parser.add_argument("--num_images", type=int, default=2, help="Number of images to create")
+args = parser.parse_args()
+
 def calculate_sha256(filepath):
     sha256 = hashlib.sha256()
     with open(filepath, "rb") as f:
@@ -34,7 +38,8 @@ def create_folders(base_path, identifier):
 def create_dicom_image(images_dir, identifier, image_size_mb):
     images_data = []
 
-    for i in range(1, 3):
+    # use configurable image number
+    for i in range(1, args.num_images + 1):
         image_alias = f"image_{i}_{identifier}"
         subfolder_rel = f"IMAGE_{image_alias}"
         subfolder_abs = os.path.join(images_dir, subfolder_rel)
