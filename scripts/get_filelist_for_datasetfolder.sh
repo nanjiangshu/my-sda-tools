@@ -15,7 +15,7 @@ Options:
     -h, --help      Show this help message and exit
     -u, --user      Specify the user (default: bp)
     -s3cmd, --s3cmd Specify the s3cmd config file (default: $HOME/.sda/s3cmd-bp-master-inbox.conf)
-    -server, --server   Specify the server (default: prod)
+    -server, --server   Specify the server [prod or staging] (default: prod)
 """
 
 # Handle help flag before parsing arguments to avoid issues
