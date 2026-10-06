@@ -433,7 +433,7 @@ def create_landing_page(landing_page_path, identifier):
     with open(os.path.join(landing_page_path, "landing_page.xml"), "w") as f:
         f.write(landing_page_xml)
 
-def create_private_files(private_path, identifier, create_datacite=True):
+def create_private_files(private_path, identifier, workflow_id="1", org_id="demo", create_datacite=True):
     org_xml = f"""<?xml version="1.0" encoding="UTF-8"?>
 <ORGANISATION_SET xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
     <ORGANISATION alias="org_{identifier}">
@@ -451,8 +451,8 @@ def create_private_files(private_path, identifier, create_datacite=True):
     rems_xml = f"""<?xml version="1.0" encoding="UTF-8"?>
 <REMS_SET xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
     <REMS alias="rems_{identifier}">
-        <WORKFLOW_ID>1</WORKFLOW_ID>
-        <ORGANISATION_ID>demo</ORGANISATION_ID>
+        <WORKFLOW_ID>{workflow_id}</WORKFLOW_ID>
+        <ORGANISATION_ID>{org_id}</ORGANISATION_ID>
         <DATASET_REF alias="{identifier}"/>
         <ATTRIBUTES>
             <STRING_ATTRIBUTE>
@@ -521,7 +521,7 @@ def create_private_files(private_path, identifier, create_datacite=True):
         with open(os.path.join(private_path, "datacite.xml"), "w") as f:
             f.write(datacite_xml)
 
-def create_dataset(base_path, identifier, image_size_mb, create_datacite=True):
+def create_dataset(base_path, identifier, image_size_mb, workflow_id="1", org_id="demo", create_datacite=True):
     dataset_path = create_folders(base_path, identifier)
 
     images_data = create_dicom_image(os.path.join(dataset_path, "IMAGES"), identifier, image_size_mb)
@@ -529,7 +529,13 @@ def create_dataset(base_path, identifier, image_size_mb, create_datacite=True):
 
     create_xml_files(os.path.join(dataset_path, "METADATA"), identifier, images_data, annotation_info)
     create_landing_page(os.path.join(dataset_path, "LANDING_PAGE"), identifier)
-    create_private_files(os.path.join(dataset_path, "PRIVATE"), identifier, create_datacite=create_datacite)
+    create_private_files(
+        os.path.join(dataset_path, "PRIVATE"),
+        identifier,
+        workflow_id=workflow_id,
+        org_id=org_id,
+        create_datacite=create_datacite
+    )
 
     print(f"Dataset successfully created at: {dataset_path}")
 
@@ -537,7 +543,16 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Create Big Picture dummy dataset folder structure")
     parser.add_argument("identifier", type=str, help="Dataset identifier")
     parser.add_argument("--image-size", type=int, default=10, help="Size of image files in MB (default: 10MB)")
+    parser.add_argument("--workflow-id", type=str, default="1", help="REMS workflow ID (default: 1)")
+    parser.add_argument("--org-id", type=str, default="demo", help="REMS organisation ID (default: demo)")
     parser.add_argument("--no-datacite", action="store_true", help="Skip creating PRIVATE/datacite.xml")
     args = parser.parse_args()
 
-    create_dataset("./", args.identifier, args.image_size, create_datacite=not args.no_datacite)
+    create_dataset(
+        "./",
+        args.identifier,
+        args.image_size,
+        workflow_id=args.workflow_id,
+        org_id=args.org_id,
+        create_datacite=not args.no_datacite
+    )
