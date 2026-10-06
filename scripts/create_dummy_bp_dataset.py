@@ -10,10 +10,6 @@ from pydicom.uid import ExplicitVRLittleEndian, generate_uid
 import json
 import argparse
 
-parser = argparse.ArgumentParser(description="Create dummy BP dataset")
-parser.add_argument("--num_images", type=int, default=2, help="Number of images to create")
-args = parser.parse_args()
-
 def calculate_sha256(filepath):
     sha256 = hashlib.sha256()
     with open(filepath, "rb") as f:
@@ -35,11 +31,11 @@ def create_folders(base_path, identifier):
         os.makedirs(os.path.join(dataset_path, folder), exist_ok=True)
     return dataset_path
 
-def create_dicom_image(images_dir, identifier, image_size_mb):
+def create_dicom_image(images_dir, identifier, num_images, image_size_mb):
     images_data = []
 
     # use configurable image number
-    for i in range(1, args.num_images + 1):
+    for i in range(1, num_images + 1):
         image_alias = f"image_{i}_{identifier}"
         subfolder_rel = f"IMAGE_{image_alias}"
         subfolder_abs = os.path.join(images_dir, subfolder_rel)
@@ -526,10 +522,10 @@ def create_private_files(private_path, identifier, workflow_id="1", org_id="demo
         with open(os.path.join(private_path, "datacite.xml"), "w") as f:
             f.write(datacite_xml)
 
-def create_dataset(base_path, identifier, image_size_mb, workflow_id="1", org_id="demo", create_datacite=True):
+def create_dataset(base_path, identifier, num_images, image_size_mb, workflow_id="1", org_id="demo", create_datacite=True):
     dataset_path = create_folders(base_path, identifier)
 
-    images_data = create_dicom_image(os.path.join(dataset_path, "IMAGES"), identifier, image_size_mb)
+    images_data = create_dicom_image(os.path.join(dataset_path, "IMAGES"), identifier, num_images, image_size_mb)
     annotation_info = create_geojson(os.path.join(dataset_path, "ANNOTATIONS"))
 
     create_xml_files(os.path.join(dataset_path, "METADATA"), identifier, images_data, annotation_info)
@@ -547,6 +543,7 @@ def create_dataset(base_path, identifier, image_size_mb, workflow_id="1", org_id
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Create Big Picture dummy dataset folder structure")
     parser.add_argument("identifier", type=str, help="Dataset identifier")
+    parser.add_argument("--num-images", type=int, default=2, help="Number of images to create (default: 2)")
     parser.add_argument("--image-size", type=int, default=10, help="Size of image files in MB (default: 10MB)")
     parser.add_argument("--workflow-id", type=str, default="1", help="REMS workflow ID (default: 1)")
     parser.add_argument("--org-id", type=str, default="demo", help="REMS organisation ID (default: demo)")
@@ -556,7 +553,8 @@ if __name__ == "__main__":
     create_dataset(
         "./",
         args.identifier,
-        args.image_size,
+        num_images=args.num_images,
+        image_size_mb=args.image_size,
         workflow_id=args.workflow_id,
         org_id=args.org_id,
         create_datacite=not args.no_datacite
