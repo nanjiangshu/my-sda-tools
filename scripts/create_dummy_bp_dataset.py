@@ -409,23 +409,34 @@ def create_xml_files(metadata_path, identifier, images_data, annotation_info):
 
 def create_landing_page(landing_page_path, identifier):
     thumbnail_path = os.path.join(landing_page_path, "THUMBNAILS")
-
-    thumb_rel_path = "LANDING_PAGE/THUMBNAILS/thumbnail_0.jpg"
-    first_thumb_hash = ""
+    sample_image_nodes = []
 
     for i in range(3):
+        filename = f"thumbnail_{i}.jpg"
+        thumb_abs = os.path.join(thumbnail_path, filename)
+
+        # Save random image
         img = Image.fromarray(np.random.randint(0, 256, (100, 100, 3), dtype=np.uint8))
-        thumb_abs = os.path.join(thumbnail_path, f"thumbnail_{i}.jpg")
         img.save(thumb_abs)
-        if i == 0:
-            first_thumb_hash = calculate_sha256(thumb_abs)
+
+        # Calculate relative path and checksum
+        thumb_rel = f"LANDING_PAGE/THUMBNAILS/{filename}"
+        checksum = calculate_sha256(thumb_abs)
+
+        # Append XML node for each generated file
+        sample_image_nodes.append(
+            f'            <SAMPLE_IMAGE_FILE filename="{thumb_rel}" checksum_method="SHA256" '
+            f'checksum="{checksum}" unencrypted_checksum="{checksum}" filetype="jpg" />'
+        )
+
+    sample_images_xml = os.linesep.join(sample_image_nodes)
 
     landing_page_xml = f"""<?xml version="1.0" encoding="UTF-8"?>
 <LANDING_PAGE_SET xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
     <LANDING_PAGE alias="landing_page_{identifier}">
         <DATASET_REF alias="{identifier}" />
         <SAMPLE_IMAGE_FILES>
-            <SAMPLE_IMAGE_FILE filename="{thumb_rel_path}" checksum_method="SHA256" checksum="{first_thumb_hash}" unencrypted_checksum="{first_thumb_hash}" filetype="jpg" />
+{sample_images_xml}
         </SAMPLE_IMAGE_FILES>
         <ATTRIBUTES xsi:nil="true" />
     </LANDING_PAGE>
