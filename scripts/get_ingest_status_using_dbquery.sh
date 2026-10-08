@@ -91,10 +91,10 @@ run_script() {
 if [[ "$overwrite" == "true" || ! -f "$userfiles_file" ]]; then
     if [[ "$verbose" == "true" ]]; then
         cat << EOF
-"$binpath/query_userfiles.sh" "$user" "$dataset_folder" > "$userfiles_file"
+"$binpath/query_userfiles.sh" -u "$user" -d "$dataset_folder" > "$userfiles_file"
 EOF
     fi
-    run_script "query_userfiles.sh" bash "$binpath/query_userfiles.sh" "$user" "$dataset_folder" > "$userfiles_file"
+    run_script "query_userfiles.sh" bash "$binpath/query_userfiles.sh" -u "$user" -d "$dataset_folder" > "$userfiles_file"
 fi
 
 if [[ ! -s "$userfiles_file" ]]; then

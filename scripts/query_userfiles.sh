@@ -1,22 +1,56 @@
 #!/bin/bash
-# This script retrieves list of files give user_id and optionally dataset_folder
+# This script retrieves list of files given a user_id and optionally a dataset_folder, using different query methods based on the -m option.
 usage="""
-Usage: $0 <user_id> [<dataset_folder>]
+Usage: $0 -u <user_id> [-d <dataset_folder>] [-dbapp <db_app_name>]
+Options:
+  -dbapp <db_app_name>   Specify the database app name to use with kubectl. Default is svc/postgres-cluster-ro.
+  -u <user_id>           Specify the user ID to query.
+  -d <dataset_folder>    Specify the dataset folder to filter by. Optional.
+  -m <method>            Specify the query method to use. Optional. Valid values
+                         are 'old', 'new', 'new_improved', 'new_improved2', 'new_improved3', 'branch'
+                         (default is 'new_improved4').
 """
+
+DB_APP_NAME=svc/postgres-cluster-ro
+method="new_improved4"
 
 if [ "$#" -lt 1 ]; then
     echo "$usage"
     exit 1
 fi
-user_id="$1"
-dataset_folder="${2:-}"
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -u)
+            user_id="$2"
+            shift 2
+            ;;
+        -d)
+            dataset_folder="$2"
+            shift 2
+            ;;
+        -dbapp)
+            DB_APP_NAME="$2"
+            shift 2
+            ;;
+        -m)
+            method="$2"
+            shift 2
+            ;;
+        *)
+            echo "Unknown option: $1"
+            echo "$usage"
+            exit 1
+            ;;
+    esac
+done
+
 if [ -z "$user_id" ]; then
     echo "Error: user_id is required."
     echo "$usage"
     exit 1
 fi
 
-DB_APP_NAME=svc/postgres-cluster-ro
 
 RunOldQuery() {
     local user_id="$1"
@@ -164,4 +198,50 @@ CROSS JOIN LATERAL (
 "
 }
 
-RunNewQueryImproved4 "$user_id" "${dataset_folder}"
+
+RunBranchQuery() {
+    local user_id="$1"
+    local dataset_folder="$2"
+    # Same query as GetUserFiles on feat/improve-userfile-query-performance, without the
+    # page limit. The values are passed as psql variables (:'user', :'folder'), which psql
+    # quotes, so quotes or '_' in the folder name are handled correctly.
+    kubectl -n sda-prod exec -i "$DB_APP_NAME" -c postgres -- \
+        psql -tA -U postgres -d sda -v user="$user_id" -v folder="$dataset_folder" <<'SQL'
+SELECT f.id, f.submission_file_path, f.stable_id, COALESCE(f.last_event, '') AS event, f.created_at
+FROM sda.files AS f
+    LEFT JOIN sda.file_dataset AS fd ON fd.file_id = f.id
+WHERE f.submission_user = :'user'
+    AND f.submission_file_path COLLATE "C" >= :'folder'
+    AND f.submission_file_path COLLATE "C" < :'folder' || chr(1114111)
+    AND fd.file_id IS NULL AND COALESCE(f.last_event, '') NOT IN ('disabled', 'removed')
+ORDER BY f.id ASC;
+SQL
+}
+
+case "$method" in
+    old)
+        RunOldQuery "$user_id" "${dataset_folder}"
+        ;;
+    new)
+        RunNewQuery "$user_id" "${dataset_folder}"
+        ;;
+    new_improved)
+        RunNewQueryImproved "$user_id" "${dataset_folder}"
+        ;;
+    new_improved2)
+        RunNewQueryImproved2 "$user_id" "${dataset_folder}"
+        ;;
+    new_improved3)
+        RunNewQueryImproved3 "$user_id" "${dataset_folder}"
+        ;;
+    new_improved4)
+        RunNewQueryImproved4 "$user_id" "${dataset_folder}"
+        ;;
+    branch)
+        RunBranchQuery "$user_id" "${dataset_folder}"
+        ;;
+    *)
+        echo "Unknown method: $method"
+        exit 1
+        ;;
+esac
