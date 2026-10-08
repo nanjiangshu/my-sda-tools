@@ -218,7 +218,30 @@ ORDER BY f.id ASC;
 SQL
 }
 
+RunV402Query() {
+    local user_id="$1"
+    local dataset_folder="$2"
+    # Same query as GetUserFiles in v4.0.2 (before the index fix), without the page limit.
+    # Like the API, an empty folder becomes NULL (no prefix filter), and the prefix
+    # length is passed in bytes (octet_length), the same as Go's len().
+    kubectl -n sda-prod exec -i "$DB_APP_NAME" -c postgres -- \
+        psql -tA -U postgres -d sda -v user="$user_id" -v folder="$dataset_folder" <<'SQL'
+SELECT f.id, f.submission_file_path, f.stable_id, COALESCE(f.last_event, '') AS event, f.created_at
+FROM sda.files AS f
+    LEFT JOIN sda.file_dataset AS fd ON fd.file_id = f.id
+WHERE f.submission_user = :'user'
+    AND (NULLIF(:'folder', '') IS NULL
+         OR substr(f.submission_file_path, 1, octet_length(:'folder')) = NULLIF(:'folder', ''))
+    AND fd.file_id IS NULL AND COALESCE(f.last_event, '') NOT IN ('disabled', 'removed')
+ORDER BY f.id ASC;
+SQL
+}
+
+
 case "$method" in
+    v4.0.2)
+        RunV402Query "$user_id" "${dataset_folder}"
+        ;;
     old)
         RunOldQuery "$user_id" "${dataset_folder}"
         ;;
