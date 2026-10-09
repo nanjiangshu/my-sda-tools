@@ -199,7 +199,7 @@ CROSS JOIN LATERAL (
 }
 
 
-RunBranchQuery() {
+RunPr2665_1Query() {
     local user_id="$1"
     local dataset_folder="$2"
     # Same query as GetUserFiles on feat/improve-userfile-query-performance, without the
@@ -237,6 +237,69 @@ ORDER BY f.id ASC;
 SQL
 }
 
+RunPR2665_2Query() {
+    local user_id="$1"
+    local dataset_folder="$2"
+    local page_limit="${PAGE_LIMIT:-1000}"              # API default page size; 0 = all rows in one page
+    local plan_mode="${PLAN_MODE:-force_generic_plan}"  # what the API's prepared statement settles on
+    # Exact GetUserFiles queries from fix/improve-userfile-query-performance (commit 2bc8afbf+),
+    # run as prepared statements with the API's argument order: $1 user, $2 cursor, $3 limit, $4 prefix.
+    # Pages like the API: fetch limit+1, print limit, next cursor = last printed id; the first page
+    # uses the nil UUID. Per-page timings go to stderr.
+    kubectl -n sda-prod exec -i "$DB_APP_NAME" -c postgres -- \
+        bash -s -- "$user_id" "$dataset_folder" "$page_limit" "$plan_mode" <<'EOF'
+user="$1"; folder="$2"; limit="$3"; plan_mode="$4"
+cursor=00000000-0000-0000-0000-000000000000
+fetch=$(( limit > 0 ? limit + 1 : 2147483647 ))
+page=0
+while :; do
+    page=$((page + 1))
+    start=$(date +%s%N)
+    if [ -z "$folder" ]; then
+        rows=$(psql -qtA -U postgres -d sda -v user="$user" -v cursor="$cursor" -v fetch="$fetch" -v plan_mode="$plan_mode" <<'SQL'
+SET plan_cache_mode = :plan_mode;
+PREPARE getUserFiles(text, uuid, int) AS
+SELECT f.id, f.submission_file_path, f.stable_id, COALESCE(f.last_event, '') as event, f.created_at, f.submission_file_size
+FROM sda.files AS f
+	LEFT JOIN sda.file_dataset AS fd ON fd.file_id = f.id
+ WHERE f.submission_user = $1
+	AND fd.file_id IS NULL AND COALESCE(f.last_event, '') NOT IN ('disabled', 'removed')
+	AND f.id > $2::UUID
+ORDER BY f.id ASC LIMIT $3;
+EXECUTE getUserFiles(:'user', :'cursor', :fetch);
+SQL
+)
+    else
+        rows=$(psql -qtA -U postgres -d sda -v user="$user" -v cursor="$cursor" -v fetch="$fetch" -v folder="$folder" -v plan_mode="$plan_mode" <<'SQL'
+SET plan_cache_mode = :plan_mode;
+PREPARE getUserFilesByPathPrefix(text, uuid, int, text) AS
+SELECT f.id, f.submission_file_path, f.stable_id, COALESCE(f.last_event, '') as event, f.created_at, f.submission_file_size
+FROM sda.files AS f
+	LEFT JOIN sda.file_dataset AS fd ON fd.file_id = f.id
+ WHERE f.submission_user = $1
+	AND f.submission_file_path COLLATE "C" >= $4::TEXT
+	AND f.submission_file_path COLLATE "C" < $4::TEXT || chr(1114111)
+	AND fd.file_id IS NULL AND COALESCE(f.last_event, '') NOT IN ('disabled', 'removed')
+	AND f.id > $2::UUID
+ORDER BY f.id ASC LIMIT $3;
+EXECUTE getUserFilesByPathPrefix(:'user', :'cursor', :fetch, :'folder');
+SQL
+)
+    fi
+    n=$( [ -z "$rows" ] && echo 0 || printf '%s\n' "$rows" | wc -l )
+    more=0
+    if [ "$limit" -gt 0 ] && [ "$n" -gt "$limit" ]; then
+        rows=$(printf '%s\n' "$rows" | head -n "$limit"); n=$limit; more=1
+    fi
+    [ -n "$rows" ] && printf '%s\n' "$rows"
+    echo "page $page: $n rows, $(( ($(date +%s%N) - start) / 1000000 )) ms" >&2
+    [ "$more" = 1 ] || break
+    cursor=$(printf '%s\n' "$rows" | tail -n 1 | cut -d'|' -f1)
+done
+EOF
+}
+
+
 
 case "$method" in
     v4.0.2)
@@ -260,8 +323,11 @@ case "$method" in
     new_improved4)
         RunNewQueryImproved4 "$user_id" "${dataset_folder}"
         ;;
-    branch)
-        RunBranchQuery "$user_id" "${dataset_folder}"
+    pr2665_1|branch)
+        RunPr2665_1Query "$user_id" "${dataset_folder}"
+        ;;
+    pr2665_2)
+        RunPr2665_2Query "$user_id" "${dataset_folder}"
         ;;
     *)
         echo "Unknown method: $method"
