@@ -18,8 +18,7 @@ usage() {
 }
 
 API_HOST="https://api.bp.nbis.se"
-ACCESS_TOKEN=$(grep access_token ~/.sda/s3cmd-bp-download.conf  | awk '{print $NF}')
-
+ACCESS_TOKEN=$(grep access_token ~/.sda/s3cmd-bp-download.conf 2>/dev/null | awk '{print $NF}' || true)
 
 DATASET_FOLDER=""
 USER_ID=""
@@ -48,7 +47,6 @@ if [[ -z "$DATASET_FOLDER" || -z "$USER_ID" ]]; then
     usage
 fi
 
-
 # Verify required tools and variables
 REQUIRED_TOOLS=("curl" "jq")
 MISSING_TOOLS=()
@@ -65,10 +63,9 @@ if [[ ${#MISSING_TOOLS[@]} -gt 0 ]]; then
 fi
 
 if [[ -z "${ACCESS_TOKEN:-}" ]]; then
-    echo "[-] Error: \$ACCESS_TOKEN is not set or empty after sourcing init_bpsubmit.sh." >&2
+    echo "[-] Error: \$ACCESS_TOKEN could not be extracted from ~/.sda/s3cmd-bp-download.conf." >&2
     exit 1
 fi
-
 
 echo "=========================================================================="
 echo " Dataset Deletion Tool"
@@ -79,41 +76,64 @@ echo " Mode           : $( [ "$DRY_RUN" = true ] && echo "DRY-RUN (No files will
 echo "=========================================================================="
 
 # ------------------------------------------------------------------------------
-# 1. Fetch File List via API
+# 1. Paginated Fetch of File List via API
 # ------------------------------------------------------------------------------
-echo "[+] Querying files for path prefix '${DATASET_FOLDER}'..."
+echo "[+] Querying all pages for path prefix '${DATASET_FOLDER}'..."
 
-RESPONSE=$(curl -s -w "\n%{http_code}" \
-    -H "Authorization: Bearer $ACCESS_TOKEN" \
-    -X GET "$API_HOST/users/$USER_ID/files?path_prefix=$DATASET_FOLDER")
+ALL_FILES_TMP=$(mktemp)
+trap 'rm -f "$ALL_FILES_TMP"' EXIT
 
-HTTP_STATUS=$(echo "$RESPONSE" | tail -n 1)
-HTTP_BODY=$(echo "$RESPONSE" | sed '$d')
+PAGE=1
+PER_PAGE=10000
 
-if [[ "$HTTP_STATUS" -ne 200 ]]; then
-    echo "[-] Error: API call to list files failed with HTTP status $HTTP_STATUS" >&2
-    echo "    Response: $HTTP_BODY" >&2
-    exit 1
-fi
+while true; do
+    RESPONSE=$(curl -s -w "\n%{http_code}" \
+        -H "Authorization: Bearer $ACCESS_TOKEN" \
+        -X GET "$API_HOST/users/$USER_ID/files?path_prefix=$DATASET_FOLDER&page=$PAGE&per_page=$PER_PAGE")
 
-# Extract file IDs and paths (expecting JSON array of objects with fields like 'id' and 'path' or 'filepath')
-FILE_ENTRIES=$(echo "$HTTP_BODY" | jq -c '.[]? // empty' || true)
+    HTTP_STATUS=$(echo "$RESPONSE" | tail -n 1)
+    HTTP_BODY=$(echo "$RESPONSE" | sed '$d')
 
-if [[ -z "$FILE_ENTRIES" ]]; then
+    if [[ "$HTTP_STATUS" -ne 200 ]]; then
+        echo "[-] Error: API call to list files failed on page $PAGE with HTTP status $HTTP_STATUS" >&2
+        echo "    Response: $HTTP_BODY" >&2
+        exit 1
+    fi
+
+    # Extract JSON objects for this page
+    PAGE_ENTRIES=$(echo "$HTTP_BODY" | jq -c '.[]? // empty' || true)
+
+    if [[ -z "$PAGE_ENTRIES" ]]; then
+        break
+    fi
+
+    PAGE_COUNT=$(echo "$PAGE_ENTRIES" | wc -l)
+    echo "    Fetched page ${PAGE} (${PAGE_COUNT} items)..."
+    echo "$PAGE_ENTRIES" >> "$ALL_FILES_TMP"
+
+    # If returned entries are fewer than PER_PAGE, we have reached the end
+    if (( PAGE_COUNT < PER_PAGE )); then
+        break
+    fi
+
+    ((PAGE++))
+done
+
+if [[ ! -s "$ALL_FILES_TMP" ]]; then
     echo "[+] No files found for dataset folder '${DATASET_FOLDER}'."
     exit 0
 fi
 
-FILE_COUNT=$(echo "$FILE_ENTRIES" | wc -l)
-echo "[+] Found ${FILE_COUNT} file(s) matching prefix '${DATASET_FOLDER}':"
+FILE_COUNT=$(wc -l < "$ALL_FILES_TMP")
+echo "[+] Total found across all pages: ${FILE_COUNT} file(s) matching prefix '${DATASET_FOLDER}'."
 echo "--------------------------------------------------------------------------"
 
-# Print details for each candidate file
-echo "$FILE_ENTRIES" | while read -r file_obj; do
-    FILE_ID=$(echo "$file_obj" | jq -r '.id // .fileid // .fileID')
-    FILE_PATH=$(echo "$file_obj" | jq -r '.path // .filepath // .path_prefix // "N/A"')
+# Print details for each candidate file using exact JSON keys: fileID and inboxPath
+while read -r file_obj; do
+    FILE_ID=$(echo "$file_obj" | jq -r '.fileID // .fileid // .id')
+    FILE_PATH=$(echo "$file_obj" | jq -r '.inboxPath // .path // "N/A"')
     echo "  - ID: ${FILE_ID} | Path: ${FILE_PATH}"
-done
+done < "$ALL_FILES_TMP"
 
 echo "--------------------------------------------------------------------------"
 
@@ -121,7 +141,7 @@ echo "--------------------------------------------------------------------------
 # 2. Handle Dry-Run Mode
 # ------------------------------------------------------------------------------
 if [[ "$DRY_RUN" == true ]]; then
-    echo "[+] [DRY-RUN] Finished scanning. ${FILE_COUNT} file(s) listed above would be deleted."
+    echo "[+] [DRY-RUN] Finished scanning. All ${FILE_COUNT} file(s) listed above would be deleted."
     exit 0
 fi
 
@@ -138,9 +158,9 @@ echo "[+] Starting file deletion..."
 SUCCESS_COUNT=0
 FAIL_COUNT=0
 
-for file_obj in $FILE_ENTRIES; do
-    FILE_ID=$(echo "$file_obj" | jq -r '.id // .fileid // .fileID')
-    FILE_PATH=$(echo "$file_obj" | jq -r '.path // .filepath // "N/A"')
+while read -r file_obj; do
+    FILE_ID=$(echo "$file_obj" | jq -r '.fileID // .fileid // .id')
+    FILE_PATH=$(echo "$file_obj" | jq -r '.inboxPath // .path // "N/A"')
 
     if [[ -z "$FILE_ID" || "$FILE_ID" == "null" ]]; then
         echo "[-] Skipping entry: missing file ID."
@@ -164,7 +184,7 @@ for file_obj in $FILE_ENTRIES; do
         echo "[FAILED] (HTTP $DEL_STATUS - $DEL_BODY)"
         ((FAIL_COUNT++))
     fi
-done
+done < "$ALL_FILES_TMP"
 
 echo "=========================================================================="
 echo " Deletion Summary:"
