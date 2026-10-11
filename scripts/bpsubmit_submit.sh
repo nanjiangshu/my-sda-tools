@@ -23,7 +23,15 @@ while getopts ":d:n:m:h" opt; do
         d) DATASET_FOLDER="${OPTARG}" ;;
         n) MAIL_UPLOADER_NAME="${OPTARG}" ;;
         m) MAIL_UPLOADER="${OPTARG}" ;;
-        h|\?) usage ;;
+        h) usage ;;
+        :)
+            echo "[-] Error: Option -${OPTARG} requires an argument." >&2
+            usage
+            ;;
+        \?)
+            echo "[-] Error: Invalid option -${OPTARG}." >&2
+            usage
+            ;;
     esac
 done
 
