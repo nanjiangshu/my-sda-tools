@@ -55,6 +55,7 @@ if [[ -z "$DATASET_FOLDER" ]]; then
     exit 1
 fi
 PATH_PREFIX="${DATASET_FOLDER}/"
+API_HOST="${API_HOST%/}"
 
 # Verify required tools
 REQUIRED_TOOLS=("curl" "jq")
@@ -129,16 +130,16 @@ while true; do
         exit 1
     fi
 
-    # Extract JSON objects for current page, keeping only files inside the dataset folder
-    PAGE_ENTRIES=$(jq -c --arg p "$PATH_PREFIX" '.[] | select(((.inboxPath // .path // "") | startswith($p)))' "$BODY_TMP")
-
-    if [[ -z "$PAGE_ENTRIES" ]]; then
+    PAGE_COUNT=$(jq 'length' "$BODY_TMP")
+    if [[ "$PAGE_COUNT" -eq 0 ]]; then
         break
     fi
-
-    PAGE_COUNT=$(echo "$PAGE_ENTRIES" | wc -l)
     echo "    Fetched page ${PAGE} (${PAGE_COUNT} items)..."
-    echo "$PAGE_ENTRIES" >> "$ALL_FILES_TMP"
+
+    # Store one "fileID<TAB>fileStatus<TAB>inboxPath" line per file inside the dataset folder
+    jq -r --arg p "$PATH_PREFIX" \
+        '.[] | select((.inboxPath // "") | startswith($p)) | [.fileID // "", .fileStatus // "", .inboxPath] | @tsv' \
+        "$BODY_TMP" >> "$ALL_FILES_TMP"
 
     # Extract X-Next-Cursor from headers file (case-insensitive grep)
     NEXT_CURSOR=$(grep -i '^x-next-cursor:' "$HEADERS_TMP" | awk '{print $2}' | tr -d '\r\n' || true)
@@ -162,26 +163,35 @@ echo "[+] Total found across all pages: ${FILE_COUNT} file(s) matching prefix '$
 echo "--------------------------------------------------------------------------"
 
 # Print details for candidate files
-while read -r file_obj; do
-    FILE_ID=$(echo "$file_obj" | jq -r '.fileID // .fileid // .id')
-    FILE_PATH=$(echo "$file_obj" | jq -r '.inboxPath // .path // "N/A"')
-    echo "  - ID: ${FILE_ID} | Path: ${FILE_PATH}"
+while IFS=$'\t' read -r FILE_ID FILE_STATUS FILE_PATH; do
+    echo "  - ID: ${FILE_ID} | Status: ${FILE_STATUS} | Path: ${FILE_PATH}"
 done < "$ALL_FILES_TMP"
 
 echo "--------------------------------------------------------------------------"
+
+# The API only deletes files whose latest event is "uploaded"; any other file returns 404
+DELETABLE_COUNT=$(awk -F'\t' '$2 == "uploaded"' "$ALL_FILES_TMP" | wc -l)
+NOT_DELETABLE_COUNT=$((FILE_COUNT - DELETABLE_COUNT))
+if [[ "$NOT_DELETABLE_COUNT" -gt 0 ]]; then
+    echo "[!] Warning: ${NOT_DELETABLE_COUNT} file(s) are not in status 'uploaded' and will be skipped (the API only deletes uploaded files)."
+fi
+if [[ "$DELETABLE_COUNT" -eq 0 ]]; then
+    echo "[+] No deletable files (status 'uploaded') found. Nothing to do."
+    exit 0
+fi
 
 # ------------------------------------------------------------------------------
 # 2. Handle Dry-Run Mode
 # ------------------------------------------------------------------------------
 if [[ "$DRY_RUN" == true ]]; then
-    echo "[+] [DRY-RUN] Finished scanning. All ${FILE_COUNT} file(s) listed above would be deleted."
+    echo "[+] [DRY-RUN] Finished scanning. ${DELETABLE_COUNT} file(s) with status 'uploaded' would be deleted."
     exit 0
 fi
 
 # ------------------------------------------------------------------------------
 # 3. Confirmation & Deletion Loop
 # ------------------------------------------------------------------------------
-read -p "[?] Are you sure you want to permanently delete these ${FILE_COUNT} file(s)? (y/N): " CONFIRM
+read -r -p "[?] Are you sure you want to permanently delete ${DELETABLE_COUNT} file(s)? (y/N): " CONFIRM || CONFIRM=""
 if [[ "${CONFIRM,,}" != "y" ]]; then
     echo "[-] Deletion aborted by user."
     exit 0
@@ -190,13 +200,16 @@ fi
 echo "[+] Starting file deletion..."
 SUCCESS_COUNT=0
 FAIL_COUNT=0
+SKIP_COUNT=0
 
-while read -r file_obj; do
-    FILE_ID=$(echo "$file_obj" | jq -r '.fileID // .fileid // .id')
-    FILE_PATH=$(echo "$file_obj" | jq -r '.inboxPath // .path // "N/A"')
+while IFS=$'\t' read -r FILE_ID FILE_STATUS FILE_PATH; do
+    if [[ "$FILE_STATUS" != "uploaded" ]]; then
+        SKIP_COUNT=$((SKIP_COUNT + 1))
+        continue
+    fi
 
-    if [[ -z "$FILE_ID" || "$FILE_ID" == "null" ]]; then
-        echo "[-] Skipping entry: missing file ID."
+    if [[ -z "$FILE_ID" ]]; then
+        echo "[-] Skipping entry with missing file ID (${FILE_PATH})."
         FAIL_COUNT=$((FAIL_COUNT + 1))
         continue
     fi
@@ -223,6 +236,7 @@ echo "==========================================================================
 echo " Deletion Summary:"
 echo "   Successfully deleted : ${SUCCESS_COUNT}"
 echo "   Failed               : ${FAIL_COUNT}"
+echo "   Skipped (not uploaded): ${SKIP_COUNT}"
 echo "=========================================================================="
 
 if [[ "$FAIL_COUNT" -gt 0 ]]; then
