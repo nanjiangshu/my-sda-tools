@@ -72,6 +72,7 @@ REQUIRED_COMMANDS=(
     "tr"
     "stat"
     "get_filelist_for_datasetfolder.sh"
+    "vault"
     "$VALIDATOR_CMD"
 )
 
@@ -89,6 +90,15 @@ if [[ ${#MISSING_COMMANDS[@]} -gt 0 ]]; then
     done
     exit 1
 fi
+
+# -------------------------
+# Vault authentication
+# -------------------------
+if ! vault token renew >/dev/null 2>&1; then
+  echo "Error: You must log in to vault.nbis.se before using this script"
+  exit 1
+fi
+
 
 echo "=========================================================================="
 echo " Processing Dataset: ${DATASET_FOLDER}"
@@ -120,7 +130,7 @@ fi
 # ------------------------------------------------------------------------------
 # Extract USER_ID
 # ------------------------------------------------------------------------------
-USER_ID=$(grep "$DATASET_FOLDER" "$S3_LIST_FILE" | head -n 1 | awk '{print $NF}' | awk -F'/' '{print $4}' | sed 's/_lifescience-ri.eu/@lifescience-ri.eu/g')
+USER_ID=$(grep "$DATASET_FOLDER" "$S3_LIST_FILE" | head -n 1 | awk '{print $NF}' | awk -F'/' '{print $4}' | sed 's/_lifescience-ri.eu/@lifescience-ri.eu/g' || true)
 
 if [[ -z "$USER_ID" ]]; then
     echo "[-] Error: Could not determine USER_ID for ${DATASET_FOLDER} from ${S3_LIST_FILE}." >&2
@@ -208,14 +218,14 @@ else
 fi
 
 # Write summary file
-INFO_FILE="${DATASET_FOLDER}.info.txt"
+INFO_FILE="${DATASET_FOLDER}.info.conf"
 cat << EOF > "$INFO_FILE"
-DATASET_FOLDER=${DATASET_FOLDER}
-USER_ID=${USER_ID}
-DATASET_ID=${DATASET_ID}
-MAIL_UPLOADER_NAME="${MAIL_UPLOADER_NAME}"
-MAIL_UPLOADER="${MAIL_UPLOADER}"
-MAIL_UPLOADER_ORGANIZATION_NAME="${MAIL_UPLOADER_ORGANIZATION_NAME}"
+export DATASET_FOLDER=${DATASET_FOLDER}
+export USER_ID=${USER_ID}
+export DATASET_ID=${DATASET_ID}
+export MAIL_UPLOADER_NAME="${MAIL_UPLOADER_NAME}"
+export MAIL_UPLOADER="${MAIL_UPLOADER}"
+export MAIL_UPLOADER_ORGANIZATION_NAME="${MAIL_UPLOADER_ORGANIZATION_NAME}"
 EOF
 
 echo "[+] Successfully created summary file: ${INFO_FILE}"
