@@ -3,6 +3,7 @@
 # This script checks if the dataset has been fully ingested by the big
 # picture pipeline. It checks if all files are mapped to the dataset, and if all
 # mapped files are synced to the s3 bucket.
+# it works only for sda-prod for the moment, could be extended to sda-staging in the future
 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 binpath="$SCRIPT_DIR"
@@ -11,7 +12,13 @@ S3CMD_CONFIG_PRIVATE="$HOME/.sda/s3cmd-bp-master-private.conf"
 S3CMD_CONFIG_METADATA="$HOME/.sda/s3cmd-bp-master-metadata.conf"
 
 # if file dataset_id.txt exists, read the DATASET_ID from it, and show a message
+# and show a warning message if $DATASET_ID from the environment does not match the one in dataset_id.txt
+
 if [[ -f "dataset_id.txt" ]]; then
+    if [[ -n "$DATASET_ID" && "$DATASET_ID" != "$(cat dataset_id.txt)" ]]; then
+        # show in yellow color
+        echo -e "\e[33mWarning: DATASET_ID from the environment does not match the one in dataset_id.txt\e[0m"
+    fi
     DATASET_ID=$(cat dataset_id.txt)
     echo "Read DATASET_ID from dataset_id.txt: $DATASET_ID"
 fi
@@ -49,6 +56,16 @@ fi
 echo -e "DATASET_ID:\t$DATASET_ID"
 echo -e "USER_ID:\t$USER_ID"
 echo -e "DATASET_FOLDER:\t$DATASET_FOLDER"
+
+# Determine if the dataset is clinical or non-clinical based on the DATASET_FOLDER name
+# if the dataset folder in the following format DATASET_036E159, it should be non-clinical, and otherwise clinical
+if [[ "$DATASET_FOLDER" =~ ^DATASET_[0-9A-F]{7}$ ]]; then
+    DATASET_TYPE="non-clinical"
+else
+    DATASET_TYPE="clinical"
+fi
+echo -e "DATASET_TYPE:\t$DATASET_TYPE"
+
 
 # check if all files are mapped to the dataset
 bash $binpath/get_file_stableids_from_datasetid.sh $DATASET_ID -target bp-prod > $DATASET_FOLDER.mapped_stableids.txt
@@ -95,5 +112,12 @@ echo -e "\nListing private files in the bucket s3://metadata-2024-01"
 s3cmd -c $S3CMD_CONFIG_PRIVATE ls -r  s3://metadata-2024-01/$user_underscore/$DATASET_ID/$DATASET_FOLDER/
 
 # check landing page files if there are any
+# if DATASET_TYPE is clinical but no landing pages are found, show a warning and with red color
 echo -e "\nListing landing page files in the bucket s3://public-metadata/datasets/$DATASET_ID/"
 s3cmd -c $S3CMD_CONFIG_METADATA ls -r  s3://public-metadata/datasets/$DATASET_ID/
+if [[ "$DATASET_TYPE" == "clinical" ]]; then
+    landing_page_count=$(s3cmd -c $S3CMD_CONFIG_METADATA ls -r  s3://public-metadata/datasets/$DATASET_ID/ | wc -l)
+    if [[ "$landing_page_count" -eq 0 ]]; then
+        echo -e "\e[31mWarning: No landing page files found for clinical dataset $DATASET_ID\e[0m"
+    fi
+fi
