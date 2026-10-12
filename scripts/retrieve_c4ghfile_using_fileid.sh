@@ -2,19 +2,22 @@
 set -euo pipefail
 
 # Configuration and Defaults
-s3cmdconf=/data3/project-sda/misc/bp-submission/s3cmd-bp-master-archive.conf
-binpath=/data3/project-sda/my-sda-tools/scripts/
-keyfile=c4gh.sec.pem
+s3cmdconf=$HOME/.sda/s3cmd-bp-master-archive.conf
+SCRIPT_PATH=$(dirname "$0")
 outdir=.
+mapfile=""
 
 usage="
-Usage: $0 [OPTIONS] <fileid1> [fileid2] ...
+Usage: $0 [OPTIONS] <fileid1> [fileid2] ... [-mapfile MAPFILE]
+
+Provide either fileids or a map file containing them.
+The mapfile is a list of fileids and filepath, one per line.
+
 Options:
   -h, --help         Show this help message and exit
   -s3cmdconf <path>  Path to the s3cmd configuration file (default: $s3cmdconf)
-  -binpath <path>    Path to the scripts directory (default: $binpath)
-  -c4ghkey <path>    Path to the c4gh private key file (default: $keyfile)
   -outdir <path>     Output directory (default: current directory)
+  -mapfile <path>       Path to the map file (default: none)
 "
 
 # --- Function Definition (Must come BEFORE the loop) ---
@@ -30,7 +33,7 @@ RetrieveFile(){
     # 1. Get the header.
     # Using 'if !' ensures that if the script fails, we can catch it manually
     # rather than having the whole script crash due to 'set -e'.
-    if ! bash "$binpath/get_header_using_fileid.sh" "$fileid" | xxd -r -p > "$tmpdir/$fileid.header.bin"; then
+    if ! bash "$SCRIPT_PATH/get_header_using_fileid.sh" "$fileid" | xxd -r -p > "$tmpdir/$fileid.header.bin"; then
         echo "Error: Failed to retrieve or convert header for $fileid"
         return 1
     fi
@@ -90,15 +93,13 @@ while [[ $# -gt 0 ]]; do
         -s3cmdconf)
             s3cmdconf="$2"; shift 2
             ;;
-        -binpath)
-            binpath="$2"; shift 2
-            ;;
-        -c4ghkey)
-            keyfile="$2"; shift 2
-            ;;
         -outdir)
             outdir="$2"
             mkdir -p "$outdir"
+            shift 2
+            ;;
+        -mapfile)
+            mapfile="$2"
             shift 2
             ;;
         *)
@@ -115,8 +116,8 @@ if [ ! -f "$s3cmdconf" ]; then
     exit 1
 fi
 
-if [ ! -f "$binpath/get_header_using_fileid.sh" ]; then
-    echo "Script not found: $binpath/get_header_using_fileid.sh"
+if [ ! -f "$SCRIPT_PATH/get_header_using_fileid.sh" ]; then
+    echo "Script not found: $SCRIPT_PATH/get_header_using_fileid.sh"
     exit 1
 fi
 
@@ -126,15 +127,30 @@ if ! vault kv get -field=private_key bp-secrets/crypt4gh > /dev/null 2>&1; then
   exit 1
 fi
 
-vault kv get -field=private_key bp-secrets/crypt4gh > "$keyfile"
-export C4GH_PASSPHRASE=$(vault kv get -field=password bp-secrets/crypt4gh)
 
 # --- Main Execution ---
 
 tmpdir=$(mktemp -d)
-# Clean up temp files AND the sensitive keyfile on exit
-trap 'rm -rf "$tmpdir"; rm -f "$keyfile"' EXIT
+keyfile="$tmpdir/c4gh.sec.pem"
 
-for fileid in "${file_ids[@]}"; do
-    RetrieveFile "$fileid"
-done
+vault kv get -field=private_key bp-secrets/crypt4gh > "$tmpdir/c4gh.sec.pem"
+export C4GH_PASSPHRASE=$(vault kv get -field=password bp-secrets/crypt4gh)
+# Clean up temp files AND the sensitive key on exit
+trap 'rm -rf "$tmpdir"' EXIT
+
+# when a mapfile is provided, read fileids from the mapfile and then use the
+# script map_fileid_to_filepath.sh to store files in the appropriate locations based on the map file
+
+if [[ -n "$mapfile" ]]; then
+    while IFS= read -r line; do
+        fileid=$(echo "$line" | awk '{print $1}')
+        RetrieveFile "$fileid"
+    done < "$mapfile"
+    bash "$SCRIPT_PATH/map_fileid_to_filepath.sh" -m "$mapfile" -s "$outdir" -o "$outdir"
+    echo "Files have been organized based on the map file and output to $outdir."
+else
+    for fileid in "${file_ids[@]}"; do
+        RetrieveFile "$fileid"
+    done
+    echo "Files have been retrieved and are available in $outdir."
+fi

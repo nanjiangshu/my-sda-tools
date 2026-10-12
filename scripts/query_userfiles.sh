@@ -237,7 +237,7 @@ ORDER BY f.id ASC;
 SQL
 }
 
-RunPR2665_2Query() {
+RunPr2665_2Query() {
     local user_id="$1"
     local dataset_folder="$2"
     local page_limit="${PAGE_LIMIT:-1000}"              # API default page size; 0 = all rows in one page

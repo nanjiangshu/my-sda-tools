@@ -41,15 +41,16 @@ fi
 echo "Starting file reorganization..."
 
 # Read the mapping file line by line
-while IFS='|' read -r file_id full_path || [[ -n "$file_id" ]]; do
-    
+# ifs is either | or white space, so we split each line accordingly
+while IFS='| ' read -r file_id full_path || [[ -n "$file_id" ]]; do
+
     # 1. Define the source file path
     src_file="$SOURCE_DIR/$file_id"
-    
+
     # 2. Prepare the destination path
     # Remove the .c4gh extension from the mapping path
     dest_path="${full_path%.c4gh}"
-    
+
     # 3. Process the file
     if [[ -f "$src_file" ]]; then
         # Create the directory structure (e.g., DATASET_XXXX/METADATA/)
@@ -58,7 +59,7 @@ while IFS='|' read -r file_id full_path || [[ -n "$file_id" ]]; do
             dest_dir="$OUTDIR/$dest_dir"
         fi
         mkdir -p "$dest_dir"
-        
+
         # Move the file to the new location
         mv "$src_file" "$dest_dir/$(basename "$dest_path")"
         echo "Moved: $file_id -> $dest_dir/$(basename "$dest_path")"
