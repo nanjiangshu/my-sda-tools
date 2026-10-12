@@ -5,6 +5,17 @@
 # mapped files are synced to the s3 bucket.
 # it works only for sda-prod for the moment, could be extended to sda-staging in the future
 
+# add a flag "-no-overwrite" to prevent overwriting existing files
+# arg parsing
+no_overwrite=false
+while [[ "$#" -gt 0 ]]; do
+    case $1 in
+        -no-overwrite) no_overwrite=true ;;
+        *) echo "Unknown parameter: $1"; exit 1 ;;
+    esac
+    shift
+done
+
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 binpath="$SCRIPT_DIR"
 S3CMD_CONFIG_SYNC="$HOME/.sda/s3cmd-bp-master-archive-s3a3_for_sync.conf"
@@ -67,16 +78,20 @@ fi
 echo -e "DATASET_TYPE:\t$DATASET_TYPE"
 
 
-# check if all files are mapped to the dataset
-bash $binpath/get_file_stableids_from_datasetid.sh $DATASET_ID -target bp-prod > $DATASET_FOLDER.mapped_stableids.txt
+# check if all files are mapped to the dataset, run command only when no_overwrite is false or the mapped file is empty
+if [[ "$no_overwrite" = false || ! -s "$DATASET_FOLDER.mapped_stableids.txt" ]]; then
+    bash $binpath/get_file_stableids_from_datasetid.sh $DATASET_ID -target bp-prod > $DATASET_FOLDER.mapped_stableids.txt
+fi
 
 mkdir -p data
-bash $binpath/get_stableid_filepath_list.sh $DATASET_FOLDER > data/${DATASET_FOLDER}-stableIDs.txt
+if [[ "$no_overwrite" = false || ! -s "data/${DATASET_FOLDER}-stableIDs.txt" ]]; then
+    bash $binpath/get_stableid_filepath_list.sh $DATASET_FOLDER > data/${DATASET_FOLDER}-stableIDs.txt
+fi
 
 numFileTotal=$(cat data/${DATASET_FOLDER}-stableIDs.txt | wc -l)
 
 
-if [ ! -f "$DATASET_FOLDER.filelist.txt" ];then
+if [ ! -s "$DATASET_FOLDER.filelist.txt" ];then
     user_underscore=$(echo $USER_ID | tr '@' '_')
     bash $binpath/get_filelist_for_datasetfolder.sh -u $user_underscore $DATASET_FOLDER
 fi
