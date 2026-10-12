@@ -8,6 +8,8 @@ file_id_list_file=""
 is_all=false
 is_dry_run=false
 
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+
 if [[ "$#" -eq 0 ]]; then
     echo "$usage"
     exit 1
@@ -75,4 +77,9 @@ else
     COPY to_delete FROM STDIN;
     DELETE FROM sda.file_dataset
     WHERE dataset_id = $digit_dataset_id AND file_id IN (SELECT f_id FROM to_delete);"
+
+    # after that, add disabled event for the delete files to sda.file_event_log
+    for fileid in $(cat "$file_id_list_file" ); do
+        $SCRIPT_DIR/addevent_fileeventlog_with_fileid.sh $fileid disabled
+    done
 fi
