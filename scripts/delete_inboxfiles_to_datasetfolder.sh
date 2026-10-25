@@ -56,13 +56,11 @@ case "$TARGET" in
     bp-prod)
         API_HOST="https://api.bp.nbis.se"
         TOKEN_CONF="$HOME/.sda/s3cmd-bp-download.conf"
-        S3_INBOX_BUCKET="s3://inbox"
         S3_LIST_FILENAME="bpprod-inbox-all.s3.txt"
         ;;
     bp-staging)
         API_HOST="https://staging-api.bp.nbis.se"
         TOKEN_CONF="$HOME/.sda/s3cmd-bp-staging-download.conf"
-        S3_INBOX_BUCKET="s3://staging-inbox"
         S3_LIST_FILENAME="bpstaging-inbox-all.s3.txt"
         ;;
     *)
@@ -116,28 +114,15 @@ if [[ -z "$USER_ID" ]]; then
     # Share the cached listing with bpsubmit_submit.sh, which keeps it in the
     # parent directory of the dataset folder
     if [[ "$(basename "$PWD")" == "$DATASET_FOLDER" ]]; then
-        S3_LIST_FILE="../${S3_LIST_FILENAME}"
+        S3_LIST_DIR=".."
     else
-        S3_LIST_FILE="./${S3_LIST_FILENAME}"
+        S3_LIST_DIR="."
     fi
+    S3_LIST_FILE="${S3_LIST_DIR}/${S3_LIST_FILENAME}"
 
     # Refresh the listing only if missing or older than 1 day (86400s)
-    REGENERATE_S3_LIST=false
-    if [[ ! -f "$S3_LIST_FILE" ]]; then
-        REGENERATE_S3_LIST=true
-    else
-        file_age=$(($(date +%s) - $(stat -c %Y "$S3_LIST_FILE")))
-        if (( file_age > 86400 )); then
-            REGENERATE_S3_LIST=true
-        fi
-    fi
-
-    if [[ "$REGENERATE_S3_LIST" == true ]]; then
-        echo "[+] Regenerating ${S3_LIST_FILE} via s3cmd..."
-        s3cmd -c ~/.sda/s3cmd-bp-master-inbox.conf ls -r "$S3_INBOX_BUCKET" > "$S3_LIST_FILE"
-    else
-        echo "[+] Using cached ${S3_LIST_FILE} (less than 1 day old)."
-    fi
+    SCRIPT_PATH=$(cd "$(dirname "$0")" && pwd)
+    bash "$SCRIPT_PATH/get_inbox_filelist.sh" -t "$TARGET" -o "$S3_LIST_DIR" -a 86400
 
     # Match the folder as a whole path component, so "DS1" does not match "DS10".
     # Paths look like s3://<bucket>/<user>/<dataset_folder>/...

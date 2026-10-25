@@ -63,6 +63,12 @@ fi
 
 VALIDATOR_CMD="${validator:-validator}"
 
+SCRIPT_PATH=$(cd "$(dirname "$0")" && pwd)
+if [[ ! -f "$SCRIPT_PATH/get_inbox_filelist.sh" ]]; then
+    echo "[-] Error: Script not found: $SCRIPT_PATH/get_inbox_filelist.sh" >&2
+    exit 1
+fi
+
 # List of all required commands to pre-check
 REQUIRED_COMMANDS=(
     "s3cmd"
@@ -70,7 +76,6 @@ REQUIRED_COMMANDS=(
     "awk"
     "sed"
     "tr"
-    "stat"
     "get_filelist_for_datasetfolder.sh"
     "vault"
     "$VALIDATOR_CMD"
@@ -108,24 +113,7 @@ echo "==========================================================================
 # Refresh bpprod-inbox-all.s3.txt (Only if missing or older than 1 day / 86400s)
 # ------------------------------------------------------------------------------
 S3_LIST_FILE="../bpprod-inbox-all.s3.txt"
-REGENERATE_S3_LIST=false
-
-if [[ ! -f "$S3_LIST_FILE" ]]; then
-    REGENERATE_S3_LIST=true
-else
-    # Check if file modification time is older than 1 day (86400 seconds)
-    file_age=$(($(date +%s) - $(stat -c %Y "$S3_LIST_FILE")))
-    if (( file_age > 86400 )); then
-        REGENERATE_S3_LIST=true
-    fi
-fi
-
-if [[ "$REGENERATE_S3_LIST" == true ]]; then
-    echo "[+] Regenerating ${S3_LIST_FILE} via s3cmd..."
-    s3cmd -c ~/.sda/s3cmd-bp-master-inbox.conf ls -r s3://inbox > "$S3_LIST_FILE"
-else
-    echo "[+] Using cached ${S3_LIST_FILE} (less than 1 day old)."
-fi
+bash "$SCRIPT_PATH/get_inbox_filelist.sh" -t bp-prod -o .. -a 86400
 
 # ------------------------------------------------------------------------------
 # Extract USER_ID
