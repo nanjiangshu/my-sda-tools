@@ -8,27 +8,29 @@ set -euo pipefail
 # Usage / Help
 # ------------------------------------------------------------------------------
 usage() {
-    echo "Usage: $0 -d DATASET_FOLDER -u USER_ID [-n] [-h] [-p API_HOST]"
+    echo "Usage: $0 -d DATASET_FOLDER [-u USER_ID] [-t TARGET] [-n] [-h] [-p API_HOST]"
     echo "  -d  Dataset folder name (Mandatory)"
-    echo "  -u  User ID / Username, e.g. user@lifescience-ri.eu (Mandatory)"
+    echo "  -u  User ID / Username, e.g. user@lifescience-ri.eu"
+    echo "      (Optional, retrieved from the S3 inbox listing if not provided)"
+    echo "  -t  Target: bp-prod or bp-staging (Optional, default: bp-prod)"
     echo "  -n  Dry-run mode (Only list files that would be deleted, do not delete)"
-    echo "  -p  API host URL (Optional, default: https://api.bp.nbis.se)"
+    echo "  -p  API host URL (Optional, overrides the default API host of the target)"
     echo "  -h  Show this help message"
     exit 1
 }
 
-API_HOST="https://api.bp.nbis.se"
-ACCESS_TOKEN=$(grep access_token ~/.sda/s3cmd-bp-download.conf 2>/dev/null | awk '{print $NF}' || true)
-
 DATASET_FOLDER=""
 USER_ID=""
+TARGET="bp-prod"
+API_HOST_OVERRIDE=""
 DRY_RUN=false
 
-while getopts ":d:u:p:nh" opt; do
+while getopts ":d:u:t:p:nh" opt; do
     case "${opt}" in
         d) DATASET_FOLDER="${OPTARG}" ;;
         u) USER_ID="${OPTARG}" ;;
-        p) API_HOST="${OPTARG}" ;;
+        t) TARGET="${OPTARG}" ;;
+        p) API_HOST_OVERRIDE="${OPTARG}" ;;
         n) DRY_RUN=true ;;
         h) usage ;;
         :)
@@ -42,10 +44,37 @@ while getopts ":d:u:p:nh" opt; do
     esac
 done
 
-if [[ -z "$DATASET_FOLDER" || -z "$USER_ID" ]]; then
-    echo "[-] Error: -d DATASET_FOLDER and -u USER_ID are mandatory." >&2
+if [[ -z "$DATASET_FOLDER" ]]; then
+    echo "[-] Error: -d DATASET_FOLDER is mandatory." >&2
     usage
 fi
+
+# ------------------------------------------------------------------------------
+# Target Specific Settings
+# ------------------------------------------------------------------------------
+case "$TARGET" in
+    bp-prod)
+        API_HOST="https://api.bp.nbis.se"
+        TOKEN_CONF="$HOME/.sda/s3cmd-bp-download.conf"
+        S3_INBOX_BUCKET="s3://inbox"
+        S3_LIST_FILENAME="bpprod-inbox-all.s3.txt"
+        ;;
+    bp-staging)
+        API_HOST="https://staging-api.bp.nbis.se"
+        TOKEN_CONF="$HOME/.sda/s3cmd-bp-staging-download.conf"
+        S3_INBOX_BUCKET="s3://staging-inbox"
+        S3_LIST_FILENAME="bpstaging-inbox-all.s3.txt"
+        ;;
+    *)
+        echo "[-] Error: Unknown target '${TARGET}'. Supported: bp-prod, bp-staging." >&2
+        usage
+        ;;
+esac
+
+if [[ -n "$API_HOST_OVERRIDE" ]]; then
+    API_HOST="$API_HOST_OVERRIDE"
+fi
+ACCESS_TOKEN=$(grep access_token "$TOKEN_CONF" 2>/dev/null | awk '{print $NF}' || true)
 
 # The API matches path_prefix as a plain string prefix, so "DS1" would also match "DS10/...".
 # Always query with a trailing slash so only files inside the folder itself are selected.
@@ -59,6 +88,9 @@ API_HOST="${API_HOST%/}"
 
 # Verify required tools
 REQUIRED_TOOLS=("curl" "jq")
+if [[ -z "$USER_ID" ]]; then
+    REQUIRED_TOOLS+=("s3cmd")
+fi
 MISSING_TOOLS=()
 for tool in "${REQUIRED_TOOLS[@]}"; do
     if ! command -v "$tool" &>/dev/null; then
@@ -73,12 +105,61 @@ if [[ ${#MISSING_TOOLS[@]} -gt 0 ]]; then
 fi
 
 if [[ -z "${ACCESS_TOKEN:-}" ]]; then
-    echo "[-] Error: \$ACCESS_TOKEN could not be extracted from ~/.sda/s3cmd-bp-download.conf." >&2
+    echo "[-] Error: \$ACCESS_TOKEN could not be extracted from ${TOKEN_CONF}." >&2
     exit 1
+fi
+
+# ------------------------------------------------------------------------------
+# Retrieve USER_ID from the S3 inbox listing if not provided
+# ------------------------------------------------------------------------------
+if [[ -z "$USER_ID" ]]; then
+    # Share the cached listing with bpsubmit_submit.sh, which keeps it in the
+    # parent directory of the dataset folder
+    if [[ "$(basename "$PWD")" == "$DATASET_FOLDER" ]]; then
+        S3_LIST_FILE="../${S3_LIST_FILENAME}"
+    else
+        S3_LIST_FILE="./${S3_LIST_FILENAME}"
+    fi
+
+    # Refresh the listing only if missing or older than 1 day (86400s)
+    REGENERATE_S3_LIST=false
+    if [[ ! -f "$S3_LIST_FILE" ]]; then
+        REGENERATE_S3_LIST=true
+    else
+        file_age=$(($(date +%s) - $(stat -c %Y "$S3_LIST_FILE")))
+        if (( file_age > 86400 )); then
+            REGENERATE_S3_LIST=true
+        fi
+    fi
+
+    if [[ "$REGENERATE_S3_LIST" == true ]]; then
+        echo "[+] Regenerating ${S3_LIST_FILE} via s3cmd..."
+        s3cmd -c ~/.sda/s3cmd-bp-master-inbox.conf ls -r "$S3_INBOX_BUCKET" > "$S3_LIST_FILE"
+    else
+        echo "[+] Using cached ${S3_LIST_FILE} (less than 1 day old)."
+    fi
+
+    # Match the folder as a whole path component, so "DS1" does not match "DS10".
+    # Paths look like s3://<bucket>/<user>/<dataset_folder>/...
+    USER_IDS=$(awk '{print $NF}' "$S3_LIST_FILE" | grep -F "/${DATASET_FOLDER}/" \
+        | awk -F'/' '{print $4}' | sed 's/_lifescience-ri.eu/@lifescience-ri.eu/g' | sort -u || true)
+
+    if [[ -z "$USER_IDS" ]]; then
+        echo "[-] Error: Could not determine USER_ID for ${DATASET_FOLDER} from ${S3_LIST_FILE}." >&2
+        exit 1
+    fi
+    if [[ $(echo "$USER_IDS" | wc -l) -gt 1 ]]; then
+        echo "[-] Error: Dataset folder ${DATASET_FOLDER} exists for more than one user. Specify one with -u:" >&2
+        echo "$USER_IDS" | sed 's/^/    - /' >&2
+        exit 1
+    fi
+    USER_ID="$USER_IDS"
+    echo "[+] Retrieved USER_ID: ${USER_ID}"
 fi
 
 echo "=========================================================================="
 echo " Dataset Deletion Tool"
+echo " Target         : ${TARGET}"
 echo " Dataset Folder : ${DATASET_FOLDER}"
 echo " User ID        : ${USER_ID}"
 echo " API Host       : ${API_HOST}"
