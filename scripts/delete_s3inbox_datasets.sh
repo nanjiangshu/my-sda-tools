@@ -40,7 +40,8 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-[[ -z "$BUCKET" || $# -lt 1 ]] && usage
+[[ -z "$BUCKET" ]] && { echo "Error: -b BUCKET is required." >&2; usage; }
+[[ $# -lt 1 ]] && { echo "Error: no input file given (e.g. output_inbox.txt)." >&2; usage; }
 for f in "$@"; do
     [[ -f "$f" ]] || { echo "Error: Input file '$f' not found." >&2; exit 1; }
 done
