@@ -83,13 +83,18 @@ def parse_files(paths):
     return users, skipped
 
 
+def clean_name(name):
+    """Drop trailing number tokens, e.g. "Johann Mueller 2023" -> "Johann Mueller"."""
+    return re.sub(r"(\s+\d+)+\s*$", "", name).strip() or name
+
+
 def build_email(name, datasets):
     n = len(datasets)
     items = "\n".join(
         f"  - {d['folder']}  (size {d['size']}, last modified {d['date']})" for d in datasets
     )
     return BODY.format(
-        name=name,
+        name=clean_name(name),
         what="the dataset below" if n == 1 else f"{n} datasets",
         items=items,
         this="this dataset" if n == 1 else "these datasets",
