@@ -5,26 +5,26 @@ Send "no ticket" cleanup emails to the uploaders of datasets in the S3 inbox.
 Input files are the *_with_owner_no_ticket.txt files, with rows like:
   SIZE MIN_DATE MAX_DATE <userid>_lifescience-ri.eu/DATASET_xxx  "no_ticket"  owner="Name"  email="a@b.se"
 
-Emails are sent through the NBIS ticketing system (assumed to be Zammad, which
-sends an email to the customer when a ticket is created with an "email" article).
+Emails are sent through the NBIS ticketing system (FreeScout, https://tickets.nbis.se)
+using its REST API: each email is created as a new conversation in a mailbox, with a
+message thread from an agent, which FreeScout delivers to the customer by email.
 Datasets of the same uploader are combined into one email.
 
-Credentials come from the environment (never from arguments):
-  TICKET_USER      login of the sending agent
-  TICKET_PASSWORD  password of that login
-  TICKET_GROUP     (optional) ticket group to create the tickets in, default "BP-ops"
-  TICKET_URL       (optional) default https://tickets.nbis.se
+Settings come from the environment (never from arguments):
+  TICKET_API_KEY     FreeScout API key (TICKET_PASSWORD is accepted as an alias)
+  TICKET_MAILBOX_ID  id of the mailbox the emails are sent from (number in its URL)
+  TICKET_USER_ID     id of the agent the message is sent as (number in the user's URL)
+  TICKET_URL         (optional) default https://tickets.nbis.se
 
 Nothing is sent unless --send is given; the default is a dry run that prints the emails.
 
 Example:
   ./send_cleanup_emails.py output_inbox_older_than_60_with_owner_no_ticket.txt \
       output_inbox-2024-01_with_owner_no_ticket.txt
-  TICKET_USER=me TICKET_PASSWORD=... ./send_cleanup_emails.py --send <files>
+  TICKET_API_KEY=... TICKET_MAILBOX_ID=1 TICKET_USER_ID=2 ./send_cleanup_emails.py --send <files>
 """
 
 import argparse
-import base64
 import json
 import os
 import re
@@ -104,30 +104,25 @@ def build_email(name, datasets):
     )
 
 
-def create_ticket(base_url, user, password, group, to_addr, subject, body):
+def create_ticket(base_url, api_key, mailbox_id, user_id, to_addr, subject, body):
     payload = {
-        "title": subject,
-        "group": group,
-        "customer_id": f"guess:{to_addr}",
-        "article": {
-            "subject": subject,
-            "body": body,
-            "type": "email",
-            "sender": "Agent",
-            "to": to_addr,
-            "content_type": "text/plain",
-            "internal": False,
-        },
+        "type": "email",
+        "mailboxId": mailbox_id,
+        "subject": subject,
+        "customer": {"email": to_addr},
+        "threads": [{"type": "message", "text": body.replace("\n", "<br>\n"),
+                     "user": user_id, "customer": {"email": to_addr}}],
     }
-    auth = base64.b64encode(f"{user}:{password}".encode()).decode()
     req = urllib.request.Request(
-        f"{base_url.rstrip('/')}/api/v1/tickets",
+        f"{base_url.rstrip('/')}/api/conversations",
         data=json.dumps(payload).encode(),
-        headers={"Content-Type": "application/json", "Authorization": f"Basic {auth}"},
+        headers={"Content-Type": "application/json", "Accept": "application/json",
+                 "X-FreeScout-API-Key": api_key},
         method="POST",
     )
     with urllib.request.urlopen(req, timeout=60) as resp:
-        return json.load(resp)
+        # 201 Created, the new conversation id is in the X-FreeScout-Conversation-Id header
+        return {"id": resp.headers.get("X-FreeScout-Conversation-Id")}
 
 
 def main():
@@ -143,12 +138,13 @@ def main():
     for d in skipped:
         print(f"WARNING: no owner/email for {d}, skipped", file=sys.stderr)
 
-    user = os.environ.get("TICKET_USER", "")
-    password = os.environ.get("TICKET_PASSWORD", "")
-    group = os.environ.get("TICKET_GROUP", "BP-ops")
+    api_key = os.environ.get("TICKET_API_KEY") or os.environ.get("TICKET_PASSWORD", "")
+    mailbox_id = os.environ.get("TICKET_MAILBOX_ID", "")
+    user_id = os.environ.get("TICKET_USER_ID", "")
     base_url = os.environ.get("TICKET_URL", "https://tickets.nbis.se")
-    if args.send and not (user and password):
-        sys.exit("Error: set TICKET_USER and TICKET_PASSWORD in the environment to use --send.")
+    if args.send and not (api_key and mailbox_id.isdigit() and user_id.isdigit()):
+        sys.exit("Error: set TICKET_API_KEY, TICKET_MAILBOX_ID and TICKET_USER_ID (numbers) "
+                 "in the environment to use --send.")
 
     failures = 0
     for email, u in users.items():
@@ -157,11 +153,14 @@ def main():
             print(f"--- DRY RUN: to {u['name']} <{email}> | {SUBJECT}\n{body}")
             continue
         try:
-            t = create_ticket(base_url, user, password, group, email, SUBJECT, body)
-            print(f"sent to {email} ({len(u['datasets'])} dataset(s)), ticket #{t.get('number', t.get('id'))}")
+            t = create_ticket(base_url, api_key, int(mailbox_id), int(user_id), email, SUBJECT, body)
+            print(f"sent to {email} ({len(u['datasets'])} dataset(s)), conversation #{t['id']}")
         except (urllib.error.URLError, ValueError) as e:
             failures += 1
-            detail = e.read().decode(errors="replace") if isinstance(e, urllib.error.HTTPError) else e
+            if isinstance(e, urllib.error.HTTPError):
+                detail = f"HTTP {e.code} {e.reason}: {e.read().decode(errors='replace')[:300]!r}"
+            else:
+                detail = e
             print(f"FAILED for {email}: {detail}", file=sys.stderr)
 
     print(f"\n{len(users)} uploader(s), {sum(len(u['datasets']) for u in users.values())} dataset(s)"
