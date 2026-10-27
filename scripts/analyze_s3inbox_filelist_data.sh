@@ -75,9 +75,10 @@ TMP_IDS=$(mktemp)
 TMP_DATES=$(mktemp)
 TMP_SIZES=$(mktemp)
 TMP_FINAL=$(mktemp)
+TMP_CONF=$(mktemp)
 
 cleanup() {
-    rm -f "$TMP_IDS" "$TMP_DATES" "$TMP_SIZES" "$TMP_FINAL"
+    rm -f "$TMP_IDS" "$TMP_DATES" "$TMP_SIZES" "$TMP_FINAL" "$TMP_CONF"
 }
 trap cleanup EXIT
 
@@ -85,8 +86,11 @@ trap cleanup EXIT
 # 1. Extract min and max dates per directory across all specified input files
 # -----------------------------------------------------------------------------
 awk '
-    match($0, /s3:\/\/[^\/]+\/([^/]+\/DATASET_[^/]+)/, arr) {
-        dir = arr[1]
+    # Portable match (BSD/macOS awk has no 3-arg match and chokes on "/" in
+    # regex literals), so use a string regex and strip the bucket with sub()
+    match($0, "s3://[^/]+/[^/]+/DATASET_[^/]+") {
+        dir = substr($0, RSTART, RLENGTH)
+        sub("^s3://[^/]+/", "", dir)
         date = $1  # First field is YYYY-MM-DD
         if (!(dir in min_date) || date < min_date[dir]) {
             min_date[dir] = date
@@ -114,15 +118,20 @@ cut -f1 "$TMP_DATES" > "$TMP_IDS"
 # -----------------------------------------------------------------------------
 # 2. Run s3cmd du for each directory and parse size in bytes
 # -----------------------------------------------------------------------------
+# The config may set human_readable_sizes = True, which makes du print e.g. "758G"
+# instead of bytes; use a temporary copy of the config with it switched off.
+grep -viE '^[[:space:]]*human_readable_sizes[[:space:]]*=' "$S3_CONFIG" > "$TMP_CONF"
+echo "human_readable_sizes = False" >> "$TMP_CONF"
+
 while IFS= read -r dir; do
     [[ -z "$dir" ]] && continue
 
     # Try inbox-2024-01 first; fall back to inbox if s3cmd fails or returns 0 bytes
-    du_output=$(s3cmd -c "$S3_CONFIG" du "s3://inbox-2024-01/$dir" 2>/dev/null || true)
+    du_output=$(s3cmd -c "$TMP_CONF" du "s3://inbox-2024-01/$dir" 2>/dev/null || true)
     bytes=$(echo "$du_output" | awk '{print $1}' | grep -E '^[0-9]+$' || echo "")
 
     if [[ -z "$bytes" || "$bytes" -eq 0 ]]; then
-        du_output=$(s3cmd -c "$S3_CONFIG" du "s3://inbox/$dir" 2>/dev/null || true)
+        du_output=$(s3cmd -c "$TMP_CONF" du "s3://inbox/$dir" 2>/dev/null || true)
         bytes=$(echo "$du_output" | awk '{print $1}' | grep -E '^[0-9]+$' || echo "0")
     fi
 
