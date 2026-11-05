@@ -8,12 +8,13 @@ set -euo pipefail
 # Usage / Help
 # ------------------------------------------------------------------------------
 usage() {
-    echo "Usage: $0 -d DATASET_FOLDER [-u USER_ID] [-t TARGET] [-n] [-h] [-p API_HOST]"
+    echo "Usage: $0 -d DATASET_FOLDER [-u USER_ID] [-t TARGET] [-n] [-y] [-h] [-p API_HOST]"
     echo "  -d  Dataset folder name (Mandatory)"
     echo "  -u  User ID / Username, e.g. user@lifescience-ri.eu"
     echo "      (Optional, retrieved from the S3 inbox listing if not provided)"
     echo "  -t  Target: bp-prod or bp-staging (Optional, default: bp-prod)"
     echo "  -n  Dry-run mode (Only list files that would be deleted, do not delete)"
+    echo "  -y  Non-interactive: skip the confirmation prompt and delete immediately"
     echo "  -p  API host URL (Optional, overrides the default API host of the target)"
     echo "  -h  Show this help message"
     exit 1
@@ -24,14 +25,16 @@ USER_ID=""
 TARGET="bp-prod"
 API_HOST_OVERRIDE=""
 DRY_RUN=false
+ASSUME_YES=false
 
-while getopts ":d:u:t:p:nh" opt; do
+while getopts ":d:u:t:p:nyh" opt; do
     case "${opt}" in
         d) DATASET_FOLDER="${OPTARG}" ;;
         u) USER_ID="${OPTARG}" ;;
         t) TARGET="${OPTARG}" ;;
         p) API_HOST_OVERRIDE="${OPTARG}" ;;
         n) DRY_RUN=true ;;
+        y) ASSUME_YES=true ;;
         h) usage ;;
         :)
             echo "[-] Error: Option -${OPTARG} requires an argument." >&2
@@ -257,10 +260,14 @@ fi
 # ------------------------------------------------------------------------------
 # 3. Confirmation & Deletion Loop
 # ------------------------------------------------------------------------------
-read -r -p "[?] Are you sure you want to permanently delete ${DELETABLE_COUNT} file(s)? (y/N): " CONFIRM || CONFIRM=""
-if [[ "${CONFIRM,,}" != "y" ]]; then
-    echo "[-] Deletion aborted by user."
-    exit 0
+if [[ "$ASSUME_YES" == true ]]; then
+    echo "[+] Confirmation skipped (-y): deleting ${DELETABLE_COUNT} file(s)."
+else
+    read -r -p "[?] Are you sure you want to permanently delete ${DELETABLE_COUNT} file(s)? (y/N): " CONFIRM || CONFIRM=""
+    if [[ "${CONFIRM,,}" != "y" ]]; then
+        echo "[-] Deletion aborted by user."
+        exit 0
+    fi
 fi
 
 echo "[+] Starting file deletion..."
