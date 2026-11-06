@@ -19,7 +19,8 @@ only when the YAML file does not set them. The API key is never read from YAML.
 
 Everything else can be given in a YAML file with --config (command-line options
 override it). Keys:
-  to:          recipient email (new email only)
+  to:          recipient email (new email; for a reply, overrides the default TO address)
+  cc, bcc:     extra CC / BCC addresses (a list, or a comma-separated string)
   subject:     subject (new email only)
   body:        message text (use a block scalar:  body: |)
   body_file:   file with the message, relative to the YAML file (alternative to body)
@@ -28,6 +29,10 @@ override it). Keys:
   reply_to:    conversation id; reply instead of creating a new conversation
   tags:        tag(s) to put on the conversation (a list, or a comma-separated string)
   mailbox_id, user_id, url:   optional, see above
+
+Recipients: a new email goes to --to, with optional --cc/--bcc. A reply goes to the
+conversation's customer unless --to is given; --to ADDR sets the TO address and every
+--cc ADDR (repeatable) is put in CC, e.g. to reply to one person and copy the others.
 
 Tags (--tag NAME, repeatable, or `tags:` in YAML): applied to the conversation after the
 message is sent, for both new emails and replies. Tags that do not exist yet are created.
@@ -39,6 +44,8 @@ Examples:
   ./send_email_through_bptickets.py --to a@b.se --subject "Hello" --body-file msg.txt --send
   ./send_email_through_bptickets.py --reply-to 1234 --body-file reply.txt --send
   ./send_email_through_bptickets.py --config mail.yaml --send
+  ./send_email_through_bptickets.py --reply-to 889 --to jane@x.org --cc bob@x.org --cc ann@x.org \
+      --body-file r.txt --send
   ./send_email_through_bptickets.py --reply-to 889 --body-file r.txt --tag cleanup --tag final_notice --send
 
 Example mail.yaml:
@@ -68,7 +75,7 @@ import urllib.request
 
 DEFAULT_URL = "https://tickets.nbis.se"
 STATUSES = ("active", "pending", "closed")
-YAML_KEYS = {"to", "subject", "body", "body_file", "html", "status", "reply_to", "tags",
+YAML_KEYS = {"to", "cc", "bcc", "subject", "body", "body_file", "html", "status", "reply_to", "tags",
              "mailbox_id", "user_id", "url"}
 
 
@@ -76,8 +83,9 @@ class TicketError(Exception):
     """Raised when the ticketing system rejects or fails a request."""
 
 
-def normalize_tags(value):
-    """Turn None, a comma-separated string or a list into a de-duplicated list of tag names."""
+def normalize_list(value):
+    """Turn None, a comma-separated string or a list into a de-duplicated list of names
+    (tags or email addresses)."""
     if not value:
         return []
     if isinstance(value, str):
@@ -136,7 +144,7 @@ def add_tags(settings, conversation_id, tags, keep_existing=True):
 
     FreeScout's tags endpoint replaces the whole tag list, so with keep_existing the
     conversation's current tags are read first and kept. Raises TicketError."""
-    tags = normalize_tags(tags)
+    tags = normalize_list(tags)
     if not tags:
         return
     cid = int(conversation_id)
@@ -147,7 +155,7 @@ def add_tags(settings, conversation_id, tags, keep_existing=True):
         except ValueError as e:
             raise TicketError(f"cannot read current tags of conversation #{cid}") from e
         current = data.get("tags") or (data.get("_embedded") or {}).get("tags") or []
-        tags = normalize_tags([t.get("name", "") if isinstance(t, dict) else t for t in current] + tags)
+        tags = normalize_list([t.get("name", "") if isinstance(t, dict) else t for t in current] + tags)
     _request(settings, "PUT", f"/api/conversations/{cid}/tags", {"tags": tags})
 
 
@@ -159,13 +167,20 @@ def _tag_after_send(settings, conversation_id, tags, keep_existing):
                           f"but adding tags failed: {e}") from e
 
 
-def send_email(settings, to_addr, subject, body, status="active", is_html=False, tags=None):
+def send_email(settings, to_addr, subject, body, status="active", is_html=False, tags=None,
+               cc=None, bcc=None):
     """Send one email as a new conversation. Returns the new conversation id.
 
     body is plain text unless is_html is True. tags (optional) are put on the new
     conversation. Raises TicketError on failure.
     """
     user_id = int(settings["user_id"])
+    thread = {"type": "message", "text": body if is_html else text_to_html(body),
+              "user": user_id, "customer": {"email": to_addr}}
+    if normalize_list(cc):
+        thread["cc"] = normalize_list(cc)
+    if normalize_list(bcc):
+        thread["bcc"] = normalize_list(bcc)
     payload = {
         "type": "email",
         "mailboxId": int(settings["mailbox_id"]),
@@ -173,13 +188,12 @@ def send_email(settings, to_addr, subject, body, status="active", is_html=False,
         "assignTo": user_id,  # keeps it visible under "Mine" for the sender
         "subject": subject,
         "customer": {"email": to_addr},
-        "threads": [{"type": "message", "text": body if is_html else text_to_html(body),
-                     "user": user_id, "customer": {"email": to_addr}}],
+        "threads": [thread],
     }
     # 201 Created, the conversation id is in the X-FreeScout-Conversation-Id header
     headers, _ = _request(settings, "POST", "/api/conversations", payload)
     cid = headers.get("X-FreeScout-Conversation-Id")
-    if normalize_tags(tags):
+    if normalize_list(tags):
         if not cid:
             raise TicketError("the message was sent but the conversation id is unknown, "
                               "so tags were not added")
@@ -187,9 +201,11 @@ def send_email(settings, to_addr, subject, body, status="active", is_html=False,
     return cid
 
 
-def reply_to_conversation(settings, conversation_id, body, status=None, is_html=False, tags=None):
+def reply_to_conversation(settings, conversation_id, body, status=None, is_html=False, tags=None,
+                          to=None, cc=None, bcc=None):
     """Add an agent reply to an existing conversation; FreeScout emails it to the
-    customer. status=None leaves the conversation status unchanged. tags (optional) are
+    customer (or to `to`, with `cc` / `bcc` copies). status=None leaves the conversation
+    status unchanged. tags (optional) are
     added to the conversation's existing tags. Raises TicketError."""
     payload = {
         "type": "message",
@@ -198,8 +214,11 @@ def reply_to_conversation(settings, conversation_id, body, status=None, is_html=
     }
     if status:
         payload["status"] = status
+    for key, value in (("to", to), ("cc", cc), ("bcc", bcc)):
+        if normalize_list(value):
+            payload[key] = normalize_list(value)
     _request(settings, "POST", f"/api/conversations/{int(conversation_id)}/threads", payload)
-    if normalize_tags(tags):
+    if normalize_list(tags):
         _tag_after_send(settings, conversation_id, tags, keep_existing=True)
     return conversation_id
 
@@ -234,7 +253,12 @@ def load_config(path):
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--config", metavar="YAML", help="YAML file with the message and its settings")
-    ap.add_argument("--to", metavar="EMAIL", help="recipient email address (new email)")
+    ap.add_argument("--to", metavar="EMAIL", help="recipient email (new email); for a reply, the TO address "
+                                            "(default: the conversation's customer)")
+    ap.add_argument("--cc", action="append", metavar="EMAIL",
+                    help="CC address (repeatable; overrides `cc` in YAML)")
+    ap.add_argument("--bcc", action="append", metavar="EMAIL",
+                    help="BCC address (repeatable; overrides `bcc` in YAML)")
     ap.add_argument("--subject", help="subject (new email)")
     ap.add_argument("--reply-to", metavar="ID", type=int,
                     help="reply to this existing conversation id instead of creating a new one")
@@ -249,7 +273,7 @@ def main():
 
     cfg = load_config(args.config) if args.config else {}
     # command-line options override the YAML file
-    for key in ("to", "subject", "reply_to", "html", "status", "tags"):
+    for key in ("to", "subject", "reply_to", "html", "status", "tags", "cc", "bcc"):
         v = getattr(args, key)
         if v is not None:
             cfg[key] = v
@@ -283,10 +307,21 @@ def main():
     if reply_to and not str(reply_to).isdigit():
         sys.exit("Error: reply_to must be a conversation id (number).")
     is_html = bool(cfg.get("html"))
-    tags = normalize_tags(cfg.get("tags"))
+    tags = normalize_list(cfg.get("tags"))
+    to_list = normalize_list(cfg.get("to")) if reply_to else []
+    cc, bcc = normalize_list(cfg.get("cc")), normalize_list(cfg.get("bcc"))
+    for addr in to_list + cc + bcc:
+        if "@" not in addr:
+            sys.exit(f"Error: not an email address: {addr!r}")
 
     target = (f"REPLY to conversation #{reply_to}" if reply_to
               else f"NEW to <{cfg['to']}> | {cfg['subject']}")
+    if reply_to and to_list:
+        target += f" | to: {', '.join(to_list)}"
+    if cc:
+        target += f" | cc: {', '.join(cc)}"
+    if bcc:
+        target += f" | bcc: {', '.join(bcc)}"
     if tags:
         target += f" | tags: {', '.join(tags)}"
     if not args.send:
@@ -297,12 +332,12 @@ def main():
     try:
         if reply_to:
             reply_to_conversation(settings, reply_to, body, status=status, is_html=is_html,
-                                  tags=tags)
+                                  tags=tags, to=to_list, cc=cc, bcc=bcc)
             print(f"replied to conversation #{reply_to}"
                   + (f", tags added: {', '.join(tags)}" if tags else ""))
         else:
             cid = send_email(settings, cfg["to"], cfg["subject"], body,
-                             status=status or "active", is_html=is_html, tags=tags)
+                             status=status or "active", is_html=is_html, tags=tags, cc=cc, bcc=bcc)
             print(f"sent to {cfg['to']}, conversation #{cid}"
                   + (f", tags: {', '.join(tags)}" if tags else ""))
     except TicketError as e:
