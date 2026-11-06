@@ -75,6 +75,99 @@ to the conversation's customer. `--to` and `--subject` are not needed.
 
 For a reply, the conversation status stays unchanged unless you give `--status`.
 
+## Rich text (HTML) body
+
+Write the body as HTML and add `--html` (or `html: true` in YAML). The body is sent as
+it is, so use `<p>` or `<br>` for line breaks; plain newlines are ignored.
+
+```bash
+cat > msg.html <<'EOF'
+<p>Dear Jane,</p>
+<p>We found these datasets in the <b>Inbox</b>:</p>
+<ul><li><code>DATASET_ED8D4BF</code></li><li><code>DATASET_7CE853F</code></li></ul>
+<p>Please <b>reply within 24 hours</b>. See the <a href="https://example.org/docs">guide</a>.</p>
+<p>Best regards,<br>BP-ops team</p>
+EOF
+
+./send_email_through_bptickets.py --to jane@example.org --subject "Final notice" \
+    --body-file msg.html --html --send
+```
+
+Keep the HTML simple and use inline styles: email clients strip scripts and external
+CSS. It works the same for replies. Send a first one to your own address and check how
+it renders. Markdown is not supported.
+
+## Tags
+
+Put tags on the conversation with `--tag` (repeatable), for new emails and replies alike.
+Tags that do not exist yet are created.
+
+```bash
+./send_email_through_bptickets.py --to jane@example.org --subject "Final notice" \
+    --body-file msg.txt --tag cleanup --tag final_notice --send
+
+./send_email_through_bptickets.py --reply-to 889 --body-file reply.txt --tag cleanup --send
+```
+
+In YAML: `tags: [cleanup, final_notice]` (or a comma-separated string). `--tag` on the
+command line replaces the YAML `tags`.
+
+The tags are set after the message is sent. A reply keeps the tags the conversation
+already has and adds the new ones. If tagging fails, the error says the message was
+already sent, with the conversation id; it is not sent again.
+
+## Recipients: TO, CC, BCC
+
+- A new email goes to `--to`. `--cc` and `--bcc` (repeatable, or comma-separated) add
+  copies.
+- A reply goes to the conversation's customer by default, with no CC. `--to ADDR`
+  replaces the TO address and each `--cc ADDR` is added as a copy:
+
+```bash
+./send_email_through_bptickets.py --reply-to 889 \
+    --to jane@example.org --cc bob@example.org --cc ann@example.org \
+    --body-file reply.txt --send
+```
+
+```yaml
+reply_to: 889
+to: jane@example.org
+cc: [bob@example.org, ann@example.org]
+body: |
+  Dear Jane, ...
+```
+
+### Reply to everyone: `--reply-all`
+
+With `--reply-to ID --reply-all` the script reads the conversation and works out the
+recipients itself:
+
+- **TO:** the customer who sent the latest customer message.
+- **CC:** everyone else on the conversation (customers, and the To and CC addresses of
+  its messages), without the TO address, the agents' own addresses and any
+  `--exclude ADDR`.
+- An explicit `--to` replaces the computed TO, and that person is copied instead.
+  Explicit `--cc` addresses are added to the computed CC.
+
+```bash
+# Dry run: reads the conversation and prints the TO and CC lists, sends nothing
+./send_email_through_bptickets.py --reply-to 889 --reply-all --exclude support@nbis.se \
+    --body-file reply.txt
+
+# Send
+./send_email_through_bptickets.py --reply-to 889 --reply-all --exclude support@nbis.se \
+    --body-file reply.txt --send
+```
+
+YAML: `reply_all: true` and `exclude: [support@nbis.se]`.
+
+Notes:
+- The dry run needs `TICKET_API_KEY`, because it reads the conversation. It sends nothing.
+- FreeScout does not tell the script the mailbox's own address, so it can show up in CC.
+  Add it with `--exclude`.
+- Always check the dry run before `--send`: the recipients are worked out from the
+  conversation's messages, and a wrong or missing address is easier to catch there.
+
 ## Use a YAML file
 
 Put the message and its settings in a YAML file and pass it with `--config`.
@@ -114,13 +207,17 @@ Keys:
 
 | Key | Meaning |
 |---|---|
-| `to` | recipient email (new email only) |
+| `to` | recipient email (new email); for a reply, replaces the default TO address |
+| `cc`, `bcc` | extra CC / BCC addresses (list or comma-separated string) |
 | `subject` | subject (new email only) |
 | `body` | message text; use a block scalar (`body: \|`) |
 | `body_file` | file with the message, relative to the YAML file (alternative to `body`) |
 | `html` | `true` if the body is HTML (default `false`) |
 | `status` | `active`, `pending` or `closed` |
 | `reply_to` | conversation id; reply instead of creating a new conversation |
+| `reply_all` | `true` to reply to everyone on the conversation (needs `reply_to`) |
+| `exclude` | addresses to leave out of a `reply_all` |
+| `tags` | tags to put on the conversation (list or comma-separated string) |
 | `mailbox_id`, `user_id`, `url` | optional; override the environment variables |
 
 Rules:
@@ -151,10 +248,15 @@ except TicketError as e:
 | Option | Meaning |
 |---|---|
 | `--config YAML` | read the message and settings from a YAML file |
-| `--to EMAIL` | recipient (new email) |
+| `--to EMAIL` | recipient (new email); for a reply, the TO address (default: the customer) |
+| `--cc EMAIL` | CC address (repeatable) |
+| `--bcc EMAIL` | BCC address (repeatable) |
 | `--subject TEXT` | subject (new email) |
 | `--reply-to ID` | reply to this conversation instead of creating one |
 | `--body-file FILE` | file with the message (default: stdin, unless `--config` gives a body) |
+| `--reply-all` | with `--reply-to`: reply to everyone (TO = latest customer, CC = the rest) |
+| `--exclude EMAIL` | address to leave out of a `--reply-all` (repeatable) |
+| `--tag NAME` | tag to put on the conversation (repeatable) |
 | `--html` | the body is HTML |
 | `--status STATUS` | `active`, `pending` or `closed` |
 | `--send` | actually send (default: dry run) |
