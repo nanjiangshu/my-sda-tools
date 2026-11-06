@@ -148,8 +148,15 @@ def load_config(path):
         import yaml
     except ImportError:
         sys.exit("Error: --config needs PyYAML (pip install pyyaml).")
-    with open(path, encoding="utf-8") as fh:
-        cfg = yaml.safe_load(fh) or {}
+    if not os.path.isfile(path):
+        sys.exit(f"Error: config file not found: {path}")
+    try:
+        with open(path, encoding="utf-8") as fh:
+            cfg = yaml.safe_load(fh) or {}
+    except (OSError, UnicodeDecodeError) as e:
+        sys.exit(f"Error: cannot read config file {path}: {e}")
+    except yaml.YAMLError as e:
+        sys.exit(f"Error: invalid YAML in {path}: {e}")
     if not isinstance(cfg, dict):
         sys.exit(f"Error: {path} must contain a YAML mapping of keys.")
     if "api_key" in cfg or "password" in cfg:
@@ -189,8 +196,13 @@ def main():
     if cfg.get("body"):
         body = str(cfg["body"])
     elif cfg.get("body_file"):
-        with open(cfg["body_file"], encoding="utf-8") as fh:
-            body = fh.read()
+        if not os.path.isfile(cfg["body_file"]):
+            sys.exit(f"Error: body file not found: {cfg['body_file']}")
+        try:
+            with open(cfg["body_file"], encoding="utf-8") as fh:
+                body = fh.read()
+        except (OSError, UnicodeDecodeError) as e:
+            sys.exit(f"Error: cannot read body file {cfg['body_file']}: {e}")
     elif args.config:
         sys.exit("Error: no body (set body or body_file in the YAML file, or use --body-file).")
     else:
