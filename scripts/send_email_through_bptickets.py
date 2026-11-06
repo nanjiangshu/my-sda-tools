@@ -27,12 +27,21 @@ override it). Keys:
   html:        true if the body is HTML (default false: plain text)
   status:      active | pending | closed
   reply_to:    conversation id; reply instead of creating a new conversation
+  reply_all:   true to reply to everyone on the conversation (see Recipients)
+  exclude:     addresses to leave out of a reply_all (e.g. the mailbox's own address)
   tags:        tag(s) to put on the conversation (a list, or a comma-separated string)
   mailbox_id, user_id, url:   optional, see above
 
 Recipients: a new email goes to --to, with optional --cc/--bcc. A reply goes to the
 conversation's customer unless --to is given; --to ADDR sets the TO address and every
 --cc ADDR (repeatable) is put in CC, e.g. to reply to one person and copy the others.
+
+--reply-all (with --reply-to) works the recipients out from the conversation: TO is the
+sender of the latest customer message, CC is everyone else who appears on the conversation
+(customers, To and CC addresses of its messages), minus the TO address, the agents' own
+addresses and any --exclude ADDR (add the mailbox's own address here if it shows up in
+CC). An explicit --to replaces the computed TO; explicit --cc addresses are added to the
+computed CC. The dry run prints the result (it reads the conversation, nothing is sent).
 
 Tags (--tag NAME, repeatable, or `tags:` in YAML): applied to the conversation after the
 message is sent, for both new emails and replies. Tags that do not exist yet are created.
@@ -75,7 +84,7 @@ import urllib.request
 
 DEFAULT_URL = "https://tickets.nbis.se"
 STATUSES = ("active", "pending", "closed")
-YAML_KEYS = {"to", "cc", "bcc", "subject", "body", "body_file", "html", "status", "reply_to", "tags",
+YAML_KEYS = {"reply_all", "exclude", "to", "cc", "bcc", "subject", "body", "body_file", "html", "status", "reply_to", "tags",
              "mailbox_id", "user_id", "url"}
 
 
@@ -137,6 +146,54 @@ def _request(settings, method, path, payload=None):
         raise TicketError(f"HTTP {e.code} {e.reason}: {e.read().decode(errors='replace')[:300]!r}") from e
     except urllib.error.URLError as e:
         raise TicketError(str(e)) from e
+
+
+def reply_all_recipients(settings, conversation_id, exclude=()):
+    """Work out (to, cc) for a reply to everybody on a conversation.
+
+    TO: the customer who sent the latest customer message (falling back to the
+    conversation's customer). CC: every other address seen on the conversation (customers,
+    To and CC of its messages), without TO, the agents' own addresses and `exclude`.
+    Raises TicketError."""
+    cid = int(conversation_id)
+    _, raw = _request(settings, "GET", f"/api/conversations/{cid}?embed=threads")
+    try:
+        conv = json.loads(raw)
+    except ValueError as e:
+        raise TicketError(f"cannot read conversation #{cid}") from e
+    threads = [t for t in (conv.get("_embedded") or {}).get("threads", []) if isinstance(t, dict)]
+    threads.sort(key=lambda t: t.get("createdAt") or "")
+
+    def email_of(obj):
+        return (obj.get("email") or "").strip() if isinstance(obj, dict) else ""
+
+    skip = {a.casefold() for a in normalize_list(list(exclude))}
+    for t in threads:  # agents' own addresses
+        if t.get("type") == "message" or (t.get("createdBy") or {}).get("type") == "user":
+            skip.add(email_of(t.get("createdBy")).casefold())
+
+    to = ""
+    for t in reversed(threads):
+        if t.get("type") == "customer" and email_of(t.get("customer")):
+            to = email_of(t["customer"])
+            break
+    to = to or email_of(conv.get("customer"))
+    if not to:
+        raise TicketError(f"no customer address found on conversation #{cid}")
+
+    seen = {to.casefold(), ""} | skip
+    cc = []
+    candidates = [email_of(conv.get("customer"))] + list(normalize_list(conv.get("cc")))
+    for t in threads:
+        if t.get("type") == "note":
+            continue
+        candidates += [email_of(t.get("customer"))]
+        candidates += normalize_list(t.get("to")) + normalize_list(t.get("cc"))
+    for addr in candidates:
+        if addr.casefold() not in seen:
+            seen.add(addr.casefold())
+            cc.append(addr)
+    return [to], cc
 
 
 def add_tags(settings, conversation_id, tags, keep_existing=True):
@@ -259,6 +316,11 @@ def main():
                     help="CC address (repeatable; overrides `cc` in YAML)")
     ap.add_argument("--bcc", action="append", metavar="EMAIL",
                     help="BCC address (repeatable; overrides `bcc` in YAML)")
+    ap.add_argument("--reply-all", action="store_true", default=None, dest="reply_all",
+                    help="with --reply-to: reply to everyone on the conversation "
+                         "(TO = latest customer, CC = everyone else)")
+    ap.add_argument("--exclude", action="append", metavar="EMAIL",
+                    help="address to leave out of a --reply-all (repeatable)")
     ap.add_argument("--subject", help="subject (new email)")
     ap.add_argument("--reply-to", metavar="ID", type=int,
                     help="reply to this existing conversation id instead of creating a new one")
@@ -273,7 +335,8 @@ def main():
 
     cfg = load_config(args.config) if args.config else {}
     # command-line options override the YAML file
-    for key in ("to", "subject", "reply_to", "html", "status", "tags", "cc", "bcc"):
+    for key in ("to", "subject", "reply_to", "html", "status", "tags", "cc", "bcc",
+                "reply_all", "exclude"):
         v = getattr(args, key)
         if v is not None:
             cfg[key] = v
@@ -314,6 +377,21 @@ def main():
         if "@" not in addr:
             sys.exit(f"Error: not an email address: {addr!r}")
 
+    reply_all = bool(cfg.get("reply_all"))
+    if reply_all and not reply_to:
+        sys.exit("Error: --reply-all needs --reply-to ID.")
+    settings = None
+    if reply_all:
+        settings = get_settings(overrides=cfg)  # reading the conversation needs the API key
+        try:
+            auto_to, auto_cc = reply_all_recipients(settings, reply_to, normalize_list(cfg.get("exclude")))
+        except TicketError as e:
+            sys.exit(f"FAILED to work out the recipients: {e}")
+        to_list = to_list or auto_to
+        to_seen = {t.casefold() for t in to_list}
+        # if --to replaced the computed TO, that person is copied instead
+        cc = [c for c in normalize_list(auto_to + auto_cc + cc) if c.casefold() not in to_seen]
+
     target = (f"REPLY to conversation #{reply_to}" if reply_to
               else f"NEW to <{cfg['to']}> | {cfg['subject']}")
     if reply_to and to_list:
@@ -328,7 +406,7 @@ def main():
         print(f"--- DRY RUN: {target}\n{body}", file=sys.stderr)
         sys.exit(0)
 
-    settings = get_settings(overrides=cfg)
+    settings = settings or get_settings(overrides=cfg)
     try:
         if reply_to:
             reply_to_conversation(settings, reply_to, body, status=status, is_html=is_html,
