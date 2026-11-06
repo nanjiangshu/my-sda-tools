@@ -26,7 +26,12 @@ override it). Keys:
   html:        true if the body is HTML (default false: plain text)
   status:      active | pending | closed
   reply_to:    conversation id; reply instead of creating a new conversation
+  tags:        tag(s) to put on the conversation (a list, or a comma-separated string)
   mailbox_id, user_id, url:   optional, see above
+
+Tags (--tag NAME, repeatable, or `tags:` in YAML): applied to the conversation after the
+message is sent, for both new emails and replies. Tags that do not exist yet are created.
+A reply keeps the tags the conversation already has and adds the new ones.
 
 Nothing is sent unless --send is given; the default is a dry run that prints the message.
 
@@ -34,11 +39,13 @@ Examples:
   ./send_email_through_bptickets.py --to a@b.se --subject "Hello" --body-file msg.txt --send
   ./send_email_through_bptickets.py --reply-to 1234 --body-file reply.txt --send
   ./send_email_through_bptickets.py --config mail.yaml --send
+  ./send_email_through_bptickets.py --reply-to 889 --body-file r.txt --tag cleanup --tag final_notice --send
 
 Example mail.yaml:
   to: a@b.se
   subject: Hello
   status: closed
+  tags: [cleanup, final_notice]
   body: |
     Dear Jane,
 
@@ -61,12 +68,27 @@ import urllib.request
 
 DEFAULT_URL = "https://tickets.nbis.se"
 STATUSES = ("active", "pending", "closed")
-YAML_KEYS = {"to", "subject", "body", "body_file", "html", "status", "reply_to",
+YAML_KEYS = {"to", "subject", "body", "body_file", "html", "status", "reply_to", "tags",
              "mailbox_id", "user_id", "url"}
 
 
 class TicketError(Exception):
     """Raised when the ticketing system rejects or fails a request."""
+
+
+def normalize_tags(value):
+    """Turn None, a comma-separated string or a list into a de-duplicated list of tag names."""
+    if not value:
+        return []
+    if isinstance(value, str):
+        value = value.split(",")
+    out, seen = [], set()
+    for t in value:
+        t = str(t).strip()
+        if t and t.casefold() not in seen:
+            seen.add(t.casefold())
+            out.append(t)
+    return out
 
 
 def get_settings(require_send=True, overrides=None):
@@ -91,27 +113,57 @@ def text_to_html(body):
     return html.escape(body).replace("\n", "<br>\n")
 
 
-def _post(settings, path, payload):
+def _request(settings, method, path, payload=None):
+    """Call the FreeScout API. Returns (response headers, response body bytes)."""
     req = urllib.request.Request(
         f"{settings['base_url'].rstrip('/')}{path}",
-        data=json.dumps(payload).encode(),
+        data=None if payload is None else json.dumps(payload).encode(),
         headers={"Content-Type": "application/json", "Accept": "application/json",
                  "X-FreeScout-API-Key": settings["api_key"]},
-        method="POST",
+        method=method,
     )
     try:
         with urllib.request.urlopen(req, timeout=60) as resp:
-            return resp.headers
+            return resp.headers, resp.read()
     except urllib.error.HTTPError as e:
         raise TicketError(f"HTTP {e.code} {e.reason}: {e.read().decode(errors='replace')[:300]!r}") from e
     except urllib.error.URLError as e:
         raise TicketError(str(e)) from e
 
 
-def send_email(settings, to_addr, subject, body, status="active", is_html=False):
+def add_tags(settings, conversation_id, tags, keep_existing=True):
+    """Add tags to a conversation (missing tags are created by FreeScout).
+
+    FreeScout's tags endpoint replaces the whole tag list, so with keep_existing the
+    conversation's current tags are read first and kept. Raises TicketError."""
+    tags = normalize_tags(tags)
+    if not tags:
+        return
+    cid = int(conversation_id)
+    if keep_existing:
+        _, raw = _request(settings, "GET", f"/api/conversations/{cid}?embed=tags")
+        try:
+            data = json.loads(raw)
+        except ValueError as e:
+            raise TicketError(f"cannot read current tags of conversation #{cid}") from e
+        current = data.get("tags") or (data.get("_embedded") or {}).get("tags") or []
+        tags = normalize_tags([t.get("name", "") if isinstance(t, dict) else t for t in current] + tags)
+    _request(settings, "PUT", f"/api/conversations/{cid}/tags", {"tags": tags})
+
+
+def _tag_after_send(settings, conversation_id, tags, keep_existing):
+    try:
+        add_tags(settings, conversation_id, tags, keep_existing=keep_existing)
+    except TicketError as e:
+        raise TicketError(f"the message was sent (conversation #{conversation_id}) "
+                          f"but adding tags failed: {e}") from e
+
+
+def send_email(settings, to_addr, subject, body, status="active", is_html=False, tags=None):
     """Send one email as a new conversation. Returns the new conversation id.
 
-    body is plain text unless is_html is True. Raises TicketError on failure.
+    body is plain text unless is_html is True. tags (optional) are put on the new
+    conversation. Raises TicketError on failure.
     """
     user_id = int(settings["user_id"])
     payload = {
@@ -125,12 +177,20 @@ def send_email(settings, to_addr, subject, body, status="active", is_html=False)
                      "user": user_id, "customer": {"email": to_addr}}],
     }
     # 201 Created, the conversation id is in the X-FreeScout-Conversation-Id header
-    return _post(settings, "/api/conversations", payload).get("X-FreeScout-Conversation-Id")
+    headers, _ = _request(settings, "POST", "/api/conversations", payload)
+    cid = headers.get("X-FreeScout-Conversation-Id")
+    if normalize_tags(tags):
+        if not cid:
+            raise TicketError("the message was sent but the conversation id is unknown, "
+                              "so tags were not added")
+        _tag_after_send(settings, cid, tags, keep_existing=False)
+    return cid
 
 
-def reply_to_conversation(settings, conversation_id, body, status=None, is_html=False):
+def reply_to_conversation(settings, conversation_id, body, status=None, is_html=False, tags=None):
     """Add an agent reply to an existing conversation; FreeScout emails it to the
-    customer. status=None leaves the conversation status unchanged. Raises TicketError."""
+    customer. status=None leaves the conversation status unchanged. tags (optional) are
+    added to the conversation's existing tags. Raises TicketError."""
     payload = {
         "type": "message",
         "text": body if is_html else text_to_html(body),
@@ -138,7 +198,9 @@ def reply_to_conversation(settings, conversation_id, body, status=None, is_html=
     }
     if status:
         payload["status"] = status
-    _post(settings, f"/api/conversations/{int(conversation_id)}/threads", payload)
+    _request(settings, "POST", f"/api/conversations/{int(conversation_id)}/threads", payload)
+    if normalize_tags(tags):
+        _tag_after_send(settings, conversation_id, tags, keep_existing=True)
     return conversation_id
 
 
@@ -180,12 +242,14 @@ def main():
     ap.add_argument("--html", action="store_true", default=None, help="body is HTML, not plain text")
     ap.add_argument("--status", choices=STATUSES,
                     help="conversation status (new email: default active; reply: unchanged)")
+    ap.add_argument("--tag", action="append", metavar="NAME", dest="tags",
+                    help="tag to put on the conversation (repeatable; overrides `tags` in YAML)")
     ap.add_argument("--send", action="store_true", help="actually send (default: dry run)")
     args = ap.parse_args()
 
     cfg = load_config(args.config) if args.config else {}
     # command-line options override the YAML file
-    for key in ("to", "subject", "reply_to", "html", "status"):
+    for key in ("to", "subject", "reply_to", "html", "status", "tags"):
         v = getattr(args, key)
         if v is not None:
             cfg[key] = v
@@ -219,9 +283,12 @@ def main():
     if reply_to and not str(reply_to).isdigit():
         sys.exit("Error: reply_to must be a conversation id (number).")
     is_html = bool(cfg.get("html"))
+    tags = normalize_tags(cfg.get("tags"))
 
     target = (f"REPLY to conversation #{reply_to}" if reply_to
               else f"NEW to <{cfg['to']}> | {cfg['subject']}")
+    if tags:
+        target += f" | tags: {', '.join(tags)}"
     if not args.send:
         print(f"--- DRY RUN: {target}\n{body}", file=sys.stderr)
         sys.exit(0)
@@ -229,12 +296,15 @@ def main():
     settings = get_settings(overrides=cfg)
     try:
         if reply_to:
-            reply_to_conversation(settings, reply_to, body, status=status, is_html=is_html)
-            print(f"replied to conversation #{reply_to}")
+            reply_to_conversation(settings, reply_to, body, status=status, is_html=is_html,
+                                  tags=tags)
+            print(f"replied to conversation #{reply_to}"
+                  + (f", tags added: {', '.join(tags)}" if tags else ""))
         else:
             cid = send_email(settings, cfg["to"], cfg["subject"], body,
-                             status=status or "active", is_html=is_html)
-            print(f"sent to {cfg['to']}, conversation #{cid}")
+                             status=status or "active", is_html=is_html, tags=tags)
+            print(f"sent to {cfg['to']}, conversation #{cid}"
+                  + (f", tags: {', '.join(tags)}" if tags else ""))
     except TicketError as e:
         sys.exit(f"FAILED: {e}")
 
