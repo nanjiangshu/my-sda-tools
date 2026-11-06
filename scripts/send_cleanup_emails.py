@@ -104,10 +104,13 @@ def build_email(name, datasets):
     )
 
 
-def create_ticket(base_url, api_key, mailbox_id, user_id, to_addr, subject, body):
+def create_ticket(base_url, api_key, mailbox_id, user_id, to_addr, subject, body,
+                  status="active"):
     payload = {
         "type": "email",
         "mailboxId": mailbox_id,
+        "status": status,  # active | pending | closed
+        "assignTo": user_id,  # keeps it visible under "Mine" for the sender
         "subject": subject,
         "customer": {"email": to_addr},
         "threads": [{"type": "message", "text": body.replace("\n", "<br>\n"),
@@ -130,6 +133,8 @@ def main():
     ap.add_argument("files", nargs="+", help="*_with_owner_no_ticket.txt input files")
     ap.add_argument("--send", action="store_true", help="actually send (default: dry run)")
     ap.add_argument("--only", metavar="EMAIL", help="restrict to this one uploader email")
+    ap.add_argument("--status", default="active", choices=["active", "pending", "closed"],
+                    help="status of the created conversation (default: active, so replies show up)")
     args = ap.parse_args()
 
     users, skipped = parse_files(args.files)
@@ -153,7 +158,8 @@ def main():
             print(f"--- DRY RUN: to {u['name']} <{email}> | {SUBJECT}\n{body}")
             continue
         try:
-            t = create_ticket(base_url, api_key, int(mailbox_id), int(user_id), email, SUBJECT, body)
+            t = create_ticket(base_url, api_key, int(mailbox_id), int(user_id), email, SUBJECT, body,
+                              status=args.status)
             print(f"sent to {email} ({len(u['datasets'])} dataset(s)), conversation #{t['id']}")
         except (urllib.error.URLError, ValueError) as e:
             failures += 1
