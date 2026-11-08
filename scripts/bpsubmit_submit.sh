@@ -13,8 +13,8 @@ usage() {
     echo "  -c  Ticket conversation id (Optional). When given, after validation has passed and"
     echo "      the dataset is submitted, a reply is sent to that conversation and the tag"
     echo "      '${VALIDATION_TAG}' is added (uses send_email_through_bptickets.py;"
-    echo "      TICKET_API_KEY, TICKET_MAILBOX_ID and TICKET_USER_ID come from"
-    echo "      ~/.sda/init_bpsubmit_prod.sh)."
+    echo "      TICKET_API_KEY, TICKET_MAILBOX_ID and TICKET_USER_ID come from the environment if"
+    echo "      exported, otherwise from ~/.sda/init_bpsubmit_prod.sh)."
     echo ""
     echo "Exit codes: 0 ok, 1 error, 3 dataset submitted but the reply to the conversation FAILED"
     echo "(do not submit again; check the conversation by hand)."
@@ -72,6 +72,17 @@ fi
 # ------------------------------------------------------------------------------
 # Environment Setup & Command Pre-checks
 # ------------------------------------------------------------------------------
+# TICKET_* variables already set (and exported) in the environment take precedence over
+# the ones in the init file, which only supplies the values that are not set.
+TICKET_VARS=(TICKET_API_KEY TICKET_PASSWORD TICKET_MAILBOX_ID TICKET_USER_ID TICKET_URL)
+SAVED_TICKET_VARS=()
+for v in "${TICKET_VARS[@]}"; do
+    if [[ -n "${!v:-}" ]]; then
+        printf -v "SAVED_${v}" '%s' "${!v}"
+        SAVED_TICKET_VARS+=("$v")
+    fi
+done
+
 if [[ -f "$HOME/.sda/init_bpsubmit_prod.sh" ]]; then
     # shellcheck disable=SC1091
     source "$HOME/.sda/init_bpsubmit_prod.sh"
@@ -79,6 +90,12 @@ else
     echo "[-] Error: $HOME/.sda/init_bpsubmit_prod.sh not found!" >&2
     exit 1
 fi
+
+# Restore the TICKET_* values that were set in the environment before the init file ran
+for v in ${SAVED_TICKET_VARS[@]+"${SAVED_TICKET_VARS[@]}"}; do
+    sv="SAVED_${v}"
+    export "$v=${!sv}"
+done
 
 VALIDATOR_CMD="${validator:-validator}"
 
@@ -128,12 +145,12 @@ if [[ -n "$CONVERSATION_ID" ]]; then
         reply_ok=0
     fi
     if [[ -z "${TICKET_API_KEY:-${TICKET_PASSWORD:-}}" ]]; then
-        echo "[-] Error: TICKET_API_KEY is not set (set it in ~/.sda/init_bpsubmit_prod.sh)." >&2
+        echo "[-] Error: TICKET_API_KEY is not set (export it, or set it in ~/.sda/init_bpsubmit_prod.sh)." >&2
         reply_ok=0
     fi
     for v in TICKET_MAILBOX_ID TICKET_USER_ID; do
         if ! [[ "${!v:-}" =~ ^[0-9]+$ ]]; then
-            echo "[-] Error: ${v} must be set to a number (set it in ~/.sda/init_bpsubmit_prod.sh)." >&2
+            echo "[-] Error: ${v} must be set to a number (export it, or set it in ~/.sda/init_bpsubmit_prod.sh)." >&2
             reply_ok=0
         fi
     done
