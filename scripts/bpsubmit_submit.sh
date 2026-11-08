@@ -143,13 +143,24 @@ if [[ -n "$CONVERSATION_ID" ]]; then
 fi
 
 # Reply to the uploader's conversation: validation passed. Returns the script's exit code.
+html_escape() {
+    local s="$1"
+    s="${s//&/&amp;}"
+    s="${s//</&lt;}"
+    s="${s//>/&gt;}"
+    printf '%s' "$s"
+}
+
 send_validation_reply() {
-    local body_file rc
+    local body_file rc name folder
     body_file=$(mktemp "${TMPDIR:-/tmp}/bpsubmit_reply.XXXXXX") || return 1
-    printf 'Dear %s,\n\nWe are pleased to inform you that your submission in the folder %s has successfully passed validation.\nWe will now proceed with the ingestion process and will update you once it is complete.\nPlease let us know if you have any questions in the meantime.\n\nBest regards,\n\nBP-Ops Team\n' \
-        "$MAIL_UPLOADER_NAME" "$DATASET_FOLDER" > "$body_file"
+    name=$(html_escape "$MAIL_UPLOADER_NAME")
+    folder=$(html_escape "$DATASET_FOLDER")
+    # HTML body: the dataset folder name is bold
+    printf '<p>Dear %s,</p>\n<p>We are pleased to inform you that your submission in the folder <b>%s</b> has successfully passed validation.<br>\nWe will now proceed with the ingestion process and will update you once it is complete.<br>\nPlease let us know if you have any questions in the meantime.</p>\n<p>Best regards,</p>\n<p>BP-Ops Team</p>\n' \
+        "$name" "$folder" > "$body_file"
     rc=0
-    python3 "$SEND_EMAIL_SCRIPT" --reply-to "$CONVERSATION_ID" --body-file "$body_file" \
+    python3 "$SEND_EMAIL_SCRIPT" --reply-to "$CONVERSATION_ID" --body-file "$body_file" --html \
         --tag "$VALIDATION_TAG" --send < /dev/null || rc=$?
     rm -f "$body_file"
     return $rc
