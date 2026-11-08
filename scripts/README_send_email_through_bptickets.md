@@ -75,6 +75,11 @@ to the conversation's customer. `--to` and `--subject` are not needed.
 
 For a reply, the conversation status stays unchanged unless you give `--status`.
 
+After the reply, the conversation is **assigned to you** (`TICKET_USER_ID`), so it shows
+up under Mine. Use `--no-assign` (or `assign: false` in YAML) to leave the assignee as it
+is. If the assignment fails, the error says the reply was already sent, with the
+conversation id; it is not sent again. New emails are always assigned to the sender.
+
 ## Rich text (HTML) body
 
 Write the body as HTML and add `--html` (or `html: true` in YAML). The body is sent as
@@ -218,6 +223,7 @@ Keys:
 | `reply_all` | `true` to reply to everyone on the conversation (needs `reply_to`) |
 | `exclude` | addresses to leave out of a `reply_all` |
 | `tags` | tags to put on the conversation (list or comma-separated string) |
+| `assign` | for a reply: assign the conversation to `user_id` afterwards (default `true`) |
 | `mailbox_id`, `user_id`, `url` | optional; override the environment variables |
 
 Rules:
@@ -257,6 +263,7 @@ except TicketError as e:
 | `--reply-all` | with `--reply-to`: reply to everyone (TO = latest customer, CC = the rest) |
 | `--exclude EMAIL` | address to leave out of a `--reply-all` (repeatable) |
 | `--tag NAME` | tag to put on the conversation (repeatable) |
+| `--no-assign` | for a reply: do not assign the conversation to `TICKET_USER_ID` |
 | `--html` | the body is HTML |
 | `--status STATUS` | `active`, `pending` or `closed` |
 | `--send` | actually send (default: dry run) |
