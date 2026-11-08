@@ -27,6 +27,7 @@ override it). Keys:
   html:        true if the body is HTML (default false: plain text)
   status:      active | pending | closed
   reply_to:    conversation id; reply instead of creating a new conversation
+  assign:      for a reply: assign the conversation to user_id after replying (default true)
   reply_all:   true to reply to everyone on the conversation (see Recipients)
   exclude:     addresses to leave out of a reply_all (e.g. the mailbox's own address)
   tags:        tag(s) to put on the conversation (a list, or a comma-separated string)
@@ -42,6 +43,10 @@ sender of the latest customer message, CC is everyone else who appears on the co
 addresses and any --exclude ADDR (add the mailbox's own address here if it shows up in
 CC). An explicit --to replaces the computed TO; explicit --cc addresses are added to the
 computed CC. The dry run prints the result (it reads the conversation, nothing is sent).
+
+Assignee: after a reply the conversation is assigned to the sending user (TICKET_USER_ID);
+use --no-assign (or `assign: false`) to leave the assignee as it is. New emails are always
+assigned to the sending user.
 
 Tags (--tag NAME, repeatable, or `tags:` in YAML): applied to the conversation after the
 message is sent, for both new emails and replies. Tags that do not exist yet are created.
@@ -85,7 +90,7 @@ import urllib.request
 DEFAULT_URL = "https://tickets.nbis.se"
 STATUSES = ("active", "pending", "closed")
 YAML_KEYS = {"reply_all", "exclude", "to", "cc", "bcc", "subject", "body", "body_file", "html", "status", "reply_to", "tags",
-             "mailbox_id", "user_id", "url"}
+             "assign", "mailbox_id", "user_id", "url"}
 
 
 class TicketError(Exception):
@@ -258,12 +263,20 @@ def send_email(settings, to_addr, subject, body, status="active", is_html=False,
     return cid
 
 
+def assign_conversation(settings, conversation_id, user_id=None):
+    """Assign a conversation to an agent (default: the sending user). Raises TicketError."""
+    uid = int(user_id if user_id is not None else settings["user_id"])
+    _request(settings, "PUT", f"/api/conversations/{int(conversation_id)}",
+             {"assignTo": uid, "byUser": uid})
+
+
 def reply_to_conversation(settings, conversation_id, body, status=None, is_html=False, tags=None,
-                          to=None, cc=None, bcc=None):
+                          to=None, cc=None, bcc=None, assign=True):
     """Add an agent reply to an existing conversation; FreeScout emails it to the
     customer (or to `to`, with `cc` / `bcc` copies). status=None leaves the conversation
-    status unchanged. tags (optional) are
-    added to the conversation's existing tags. Raises TicketError."""
+    status unchanged. With assign (default) the conversation is then assigned to the
+    sending user (TICKET_USER_ID). tags (optional) are added to the conversation's
+    existing tags. Raises TicketError."""
     payload = {
         "type": "message",
         "text": body if is_html else text_to_html(body),
@@ -275,6 +288,12 @@ def reply_to_conversation(settings, conversation_id, body, status=None, is_html=
         if normalize_list(value):
             payload[key] = normalize_list(value)
     _request(settings, "POST", f"/api/conversations/{int(conversation_id)}/threads", payload)
+    if assign:
+        try:
+            assign_conversation(settings, conversation_id)
+        except TicketError as e:
+            raise TicketError(f"the message was sent (conversation #{conversation_id}) "
+                              f"but assigning it to user {settings['user_id']} failed: {e}") from e
     if normalize_list(tags):
         _tag_after_send(settings, conversation_id, tags, keep_existing=True)
     return conversation_id
@@ -330,6 +349,8 @@ def main():
                     help="conversation status (new email: default active; reply: unchanged)")
     ap.add_argument("--tag", action="append", metavar="NAME", dest="tags",
                     help="tag to put on the conversation (repeatable; overrides `tags` in YAML)")
+    ap.add_argument("--no-assign", action="store_true", default=None, dest="no_assign",
+                    help="for a reply: do not assign the conversation to TICKET_USER_ID")
     ap.add_argument("--send", action="store_true", help="actually send (default: dry run)")
     args = ap.parse_args()
 
@@ -343,6 +364,8 @@ def main():
     if args.body_file:
         cfg["body_file"] = args.body_file
         cfg.pop("body", None)
+    if args.no_assign:
+        cfg["assign"] = False
 
     if cfg.get("body"):
         body = str(cfg["body"])
@@ -410,8 +433,10 @@ def main():
     try:
         if reply_to:
             reply_to_conversation(settings, reply_to, body, status=status, is_html=is_html,
-                                  tags=tags, to=to_list, cc=cc, bcc=bcc)
+                                  tags=tags, to=to_list, cc=cc, bcc=bcc,
+                                  assign=cfg.get("assign", True))
             print(f"replied to conversation #{reply_to}"
+                  + (f", assigned to user {settings['user_id']}" if cfg.get("assign", True) else "")
                   + (f", tags added: {', '.join(tags)}" if tags else ""))
         else:
             cid = send_email(settings, cfg["to"], cfg["subject"], body,
