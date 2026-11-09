@@ -2,13 +2,14 @@
 
 # Analyze S3 inbox file list data to extract dataset directories, their min/max dates, and sizes
 # Input files should contain S3 paths with dates in the format YYYY-MM-DD as the first field.
-# Output columns: raw bytes (zero-padded), human-readable size, min date, max date, directory path
+# Output columns: human-readable size, min date, max date, directory path, number of files
+# (NUMBER_FILES is last so that tools reading the first four columns are not affected)
 # Example usage:
 #   ./analyze_s3inbox_filelist_data.sh -older-than 30 input_file.txt
 # The input file should have lines like:
 # YYYY-MM-DD s3://bucket/path/to/DATASET_xxx/file
 # The script will output lines like:
-# 0000001234    1.2K    2024-01-01    2024-01-31    DATASET_xxx
+# 1.2K 2024-01-01 2024-01-31 <userid>/DATASET_xxx 42
 # The raw bytes column is zero-padded to maintain sorting order.
 # The script requires s3cmd to be installed and configured with the appropriate S3 credentials.
 # The script will create temporary files for intermediate data and clean them up on exit.
@@ -127,15 +128,18 @@ while IFS= read -r dir; do
     [[ -z "$dir" ]] && continue
 
     # Try inbox-2024-01 first; fall back to inbox if s3cmd fails or returns 0 bytes
+    # du prints "<bytes> <N> objects s3://..."; take the size and the number of files
     du_output=$(s3cmd -c "$TMP_CONF" du "s3://inbox-2024-01/$dir" 2>/dev/null || true)
-    bytes=$(echo "$du_output" | awk '{print $1}' | grep -E '^[0-9]+$' || echo "")
+    bytes=$(echo "$du_output" | awk '{print $1}' | grep -E '^[0-9]+$' | head -n1 || echo "")
+    nfiles=$(echo "$du_output" | awk 'NR==1 && $2 ~ /^[0-9]+$/ {print $2}')
 
     if [[ -z "$bytes" || "$bytes" -eq 0 ]]; then
         du_output=$(s3cmd -c "$TMP_CONF" du "s3://inbox/$dir" 2>/dev/null || true)
-        bytes=$(echo "$du_output" | awk '{print $1}' | grep -E '^[0-9]+$' || echo "0")
+        bytes=$(echo "$du_output" | awk '{print $1}' | grep -E '^[0-9]+$' | head -n1 || echo "0")
+        nfiles=$(echo "$du_output" | awk 'NR==1 && $2 ~ /^[0-9]+$/ {print $2}')
     fi
 
-    printf "%s\t%s\n" "$dir" "$bytes"
+    printf "%s\t%s\t%s\n" "$dir" "$bytes" "${nfiles:-0}"
 done < "$TMP_IDS" > "$TMP_SIZES"
 
 # -----------------------------------------------------------------------------
@@ -163,12 +167,13 @@ awk -F'\t' '
     {
         dir = $1
         bytes = $2
+        nfiles = $3
         human_size = hr(bytes)
         d1 = min_date[dir] ? min_date[dir] : "N/A"
         d2 = max_date[dir] ? max_date[dir] : "N/A"
 
         # Output zero-padded raw bytes as 1st field for numerical sorting
-        printf "%020d\t%s %s %s %s\n", bytes, human_size, d1, d2, dir
+        printf "%020d\t%s %s %s %s %d\n", bytes, human_size, d1, d2, dir, nfiles
     }
 ' "$TMP_DATES" "$TMP_SIZES" > "$TMP_FINAL"
 
@@ -176,5 +181,5 @@ awk -F'\t' '
 if [[ -n "$CUTOFF_DATE" ]]; then
     echo "# Only datasets with last modified (MAX_DATE) before $CUTOFF_DATE (older than $OLDER_THAN days) are listed"
 fi
-echo "SIZE MIN_DATE MAX_DATE DIR"
+echo "SIZE MIN_DATE MAX_DATE DIR NUMBER_FILES"
 sort -r "$TMP_FINAL" | cut -f2-
