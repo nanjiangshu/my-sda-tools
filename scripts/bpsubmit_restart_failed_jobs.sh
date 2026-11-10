@@ -12,7 +12,7 @@ usage() {
     echo "                    status 'Failed' are processed)"
     echo "  -n  Kubernetes namespace (default: sda-prod)"
     echo "  -r  Base directory holding the dataset folders (default: current directory)"
-    echo "  -s  Seconds to wait between deleting the job and applying the yaml (default: 5)"
+    echo "  -s  Seconds to wait between deleting the job and applying the yaml (default: 2)"
     echo "  -y  Do not ask for confirmation"
     echo ""
     echo "For every job id (dataset-0a59c13) the script:"
@@ -26,7 +26,7 @@ usage() {
 NAMESPACE="sda-prod"
 BASE_DIR="$(pwd)"
 ASSUME_YES=0
-DELAY=5
+DELAY=2
 
 while getopts ":n:r:s:yh" opt; do
     case "${opt}" in
