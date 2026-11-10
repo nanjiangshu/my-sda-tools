@@ -6,12 +6,13 @@ set -uo pipefail
 # Usage
 # ------------------------------------------------------------------------------
 usage() {
-    echo "Usage: $0 [-n NAMESPACE] [-r BASE_DIR] [-y] FAILED_JOBS_FILE"
+    echo "Usage: $0 [-n NAMESPACE] [-r BASE_DIR] [-s SECONDS] [-y] FAILED_JOBS_FILE"
     echo "  FAILED_JOBS_FILE  Output of 'kubectl get jobs' listing, e.g. failed_jobs_2026-11-10.txt"
     echo "                    (first column = job id, e.g. dataset-0a59c13; only lines with"
     echo "                    status 'Failed' are processed)"
     echo "  -n  Kubernetes namespace (default: sda-prod)"
     echo "  -r  Base directory holding the dataset folders (default: current directory)"
+    echo "  -s  Seconds to wait between deleting the job and applying the yaml (default: 5)"
     echo "  -y  Do not ask for confirmation"
     echo ""
     echo "For every job id (dataset-0a59c13) the script:"
@@ -25,11 +26,13 @@ usage() {
 NAMESPACE="sda-prod"
 BASE_DIR="$(pwd)"
 ASSUME_YES=0
+DELAY=5
 
-while getopts ":n:r:yh" opt; do
+while getopts ":n:r:s:yh" opt; do
     case "${opt}" in
         n) NAMESPACE="${OPTARG}" ;;
         r) BASE_DIR="${OPTARG}" ;;
+        s) DELAY="${OPTARG}" ;;
         y) ASSUME_YES=1 ;;
         h|*) usage ;;
     esac
@@ -37,6 +40,7 @@ done
 shift $((OPTIND - 1))
 
 [[ $# -eq 1 ]] || usage
+[[ "$DELAY" =~ ^[0-9]+$ ]] || { echo "[!] -s must be a non-negative integer" >&2; exit 1; }
 [[ -n "${ACCESS_TOKEN:-}" ]] || { echo "[!] ACCESS_TOKEN is not set in the environment" >&2; exit 1; }
 INPUT_FILE="$1"
 [[ -f "$INPUT_FILE" ]] || { echo "[!] Input file not found: $INPUT_FILE" >&2; exit 1; }
@@ -112,6 +116,8 @@ process_job() {
     set_token "$yaml" || { echo "[!] CLIENT_ACCESS_TOKEN entry not found/updated in $yaml"; return 1; }
     echo "[+] Updated CLIENT_ACCESS_TOKEN in $yaml"
 
+    echo "[*] Waiting ${DELAY}s before applying"
+    sleep "$DELAY"
     kubectl -n "$NAMESPACE" apply --server-side -f "$yaml" || return 1
 }
 
