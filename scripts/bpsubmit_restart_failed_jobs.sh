@@ -15,9 +15,9 @@ usage() {
     echo "  -y  Do not ask for confirmation"
     echo ""
     echo "For every job id (dataset-0a59c13) the script:"
-    echo "  1. cd into DATASET_0A59C13 and sources DATASET_0A59C13.info.conf (must give ACCESS_TOKEN)"
+    echo "  1. cd into DATASET_0A59C13 and sources DATASET_0A59C13.info.conf"
     echo "  2. deletes the job if it exists and is Failed"
-    echo "  3. sets CLIENT_ACCESS_TOKEN in DATASET_0A59C13.yaml to \$ACCESS_TOKEN"
+    echo "  3. sets CLIENT_ACCESS_TOKEN in DATASET_0A59C13.yaml to \$ACCESS_TOKEN (taken from the environment)"
     echo "  4. kubectl apply --server-side -f DATASET_0A59C13.yaml"
     exit 1
 }
@@ -37,6 +37,7 @@ done
 shift $((OPTIND - 1))
 
 [[ $# -eq 1 ]] || usage
+[[ -n "${ACCESS_TOKEN:-}" ]] || { echo "[!] ACCESS_TOKEN is not set in the environment" >&2; exit 1; }
 INPUT_FILE="$1"
 [[ -f "$INPUT_FILE" ]] || { echo "[!] Input file not found: $INPUT_FILE" >&2; exit 1; }
 INPUT_FILE="$(cd "$(dirname "$INPUT_FILE")" && pwd)/$(basename "$INPUT_FILE")"
@@ -92,10 +93,8 @@ process_job() {
     [[ -f "$info" ]] || { echo "[!] Missing $dir/$info"; return 1; }
     [[ -f "$yaml" ]] || { echo "[!] Missing $dir/$yaml"; return 1; }
 
-    unset ACCESS_TOKEN
     # shellcheck disable=SC1090
     source "$info"
-    [[ -n "${ACCESS_TOKEN:-}" ]] || { echo "[!] ACCESS_TOKEN not set by $info"; return 1; }
 
     # Delete the job only if it exists and has failed
     local failed
