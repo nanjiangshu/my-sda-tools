@@ -15,6 +15,9 @@
 # The script will create temporary files for intermediate data and clean them up on exit.
 # The script supports an optional -older-than argument to filter datasets by their max date.
 # The script assumes that the S3 paths follow the pattern s3://bucket/path/to/DATASET_xxx/file with the date as the first field.
+# The bucket in each path is kept: the same dataset can exist in two buckets (inbox and
+# inbox-2024-01) and size and number of files are always read from the bucket of the listing.
+# If the input files contain two buckets, a dataset in both gets one row per bucket.
 
 set -euo pipefail
 
@@ -91,30 +94,34 @@ awk '
     # regex literals), so use a string regex and strip the bucket with sub()
     match($0, "s3://[^/]+/[^/]+/DATASET_[^/]+") {
         dir = substr($0, RSTART, RLENGTH)
-        sub("^s3://[^/]+/", "", dir)
+        sub("^s3://", "", dir)
+        bucket = dir
+        sub("/.*", "", bucket)
+        sub("^[^/]+/", "", dir)
+        key = bucket "\t" dir
         date = $1  # First field is YYYY-MM-DD
-        if (!(dir in min_date) || date < min_date[dir]) {
-            min_date[dir] = date
+        if (!(key in min_date) || date < min_date[key]) {
+            min_date[key] = date
         }
-        if (!(dir in max_date) || date > max_date[dir]) {
-            max_date[dir] = date
+        if (!(key in max_date) || date > max_date[key]) {
+            max_date[key] = date
         }
     }
     END {
-        for (d in min_date) {
-            print d "\t" min_date[d] "\t" max_date[d]
+        for (k in min_date) {
+            print k "\t" min_date[k] "\t" max_date[k]
         }
     }
 ' "$@" > "$TMP_DATES"
 
 # Keep only directories whose max date is older than the cutoff
 if [[ -n "$CUTOFF_DATE" ]]; then
-    awk -F'\t' -v cutoff="$CUTOFF_DATE" '$3 < cutoff' "$TMP_DATES" > "$TMP_FINAL"
+    awk -F'\t' -v cutoff="$CUTOFF_DATE" '$4 < cutoff' "$TMP_DATES" > "$TMP_FINAL"
     mv "$TMP_FINAL" "$TMP_DATES"
 fi
 
 # Extract unique directory paths
-cut -f1 "$TMP_DATES" > "$TMP_IDS"
+cut -f1,2 "$TMP_DATES" > "$TMP_IDS"
 
 # -----------------------------------------------------------------------------
 # 2. Run s3cmd du for each directory and parse size in bytes
@@ -124,22 +131,17 @@ cut -f1 "$TMP_DATES" > "$TMP_IDS"
 grep -viE '^[[:space:]]*human_readable_sizes[[:space:]]*=' "$S3_CONFIG" > "$TMP_CONF"
 echo "human_readable_sizes = False" >> "$TMP_CONF"
 
-while IFS= read -r dir; do
+while IFS=$'\t' read -r bucket dir; do
     [[ -z "$dir" ]] && continue
 
-    # Try inbox-2024-01 first; fall back to inbox if s3cmd fails or returns 0 bytes
     # du prints "<bytes> <N> objects s3://..."; take the size and the number of files
-    du_output=$(s3cmd -c "$TMP_CONF" du "s3://inbox-2024-01/$dir" 2>/dev/null || true)
+    # of the bucket where the dataset was listed (not of another bucket with the same dataset).
+    # The trailing slash keeps DATASET_X from also counting DATASET_X2 (du matches a prefix).
+    du_output=$(s3cmd -c "$TMP_CONF" du "s3://$bucket/$dir/" 2>/dev/null || true)
     bytes=$(echo "$du_output" | awk '{print $1}' | grep -E '^[0-9]+$' | head -n1 || echo "")
     nfiles=$(echo "$du_output" | awk 'NR==1 && $2 ~ /^[0-9]+$/ {print $2}')
 
-    if [[ -z "$bytes" || "$bytes" -eq 0 ]]; then
-        du_output=$(s3cmd -c "$TMP_CONF" du "s3://inbox/$dir" 2>/dev/null || true)
-        bytes=$(echo "$du_output" | awk '{print $1}' | grep -E '^[0-9]+$' | head -n1 || echo "0")
-        nfiles=$(echo "$du_output" | awk 'NR==1 && $2 ~ /^[0-9]+$/ {print $2}')
-    fi
-
-    printf "%s\t%s\t%s\n" "$dir" "$bytes" "${nfiles:-0}"
+    printf "%s\t%s\t%s\t%s\n" "$bucket" "$dir" "${bytes:-0}" "${nfiles:-0}"
 done < "$TMP_IDS" > "$TMP_SIZES"
 
 # -----------------------------------------------------------------------------
@@ -160,17 +162,18 @@ awk -F'\t' '
     }
 
     FILENAME == ARGV[1] {
-        min_date[$1] = $2
-        max_date[$1] = $3
+        min_date[$1 "\t" $2] = $3
+        max_date[$1 "\t" $2] = $4
         next
     }
     {
-        dir = $1
-        bytes = $2
-        nfiles = $3
+        key = $1 "\t" $2
+        dir = $2
+        bytes = $3
+        nfiles = $4
         human_size = hr(bytes)
-        d1 = min_date[dir] ? min_date[dir] : "N/A"
-        d2 = max_date[dir] ? max_date[dir] : "N/A"
+        d1 = min_date[key] ? min_date[key] : "N/A"
+        d2 = max_date[key] ? max_date[key] : "N/A"
 
         # Output zero-padded raw bytes as 1st field for numerical sorting
         printf "%020d\t%s %s %s %s %d\n", bytes, human_size, d1, d2, dir, nfiles
